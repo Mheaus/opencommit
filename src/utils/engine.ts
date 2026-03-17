@@ -36,14 +36,18 @@ export function parseCustomHeaders(headers: any): Record<string, string> {
   return parsedHeaders;
 }
 
-export function getEngine(): AiEngine {
+/**
+ * Get an AI engine instance.
+ * @param modelOverride - Optional model name to use instead of config default (for model routing)
+ */
+export function getEngine(modelOverride?: string): AiEngine {
   const config = getConfig();
   const provider = config.OCO_AI_PROVIDER;
 
   const customHeaders = parseCustomHeaders(config.OCO_API_CUSTOM_HEADERS);
 
   const DEFAULT_CONFIG = {
-    model: config.OCO_MODEL!,
+    model: modelOverride || config.OCO_MODEL!,
     maxTokensOutput: config.OCO_TOKENS_MAX_OUTPUT!,
     maxTokensInput: config.OCO_TOKENS_MAX_INPUT!,
     baseURL: config.OCO_API_URL!,

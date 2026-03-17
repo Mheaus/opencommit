@@ -28,7 +28,12 @@ export enum CONFIG_KEYS {
   OCO_API_CUSTOM_HEADERS = 'OCO_API_CUSTOM_HEADERS',
   OCO_OMIT_SCOPE = 'OCO_OMIT_SCOPE',
   OCO_GITPUSH = 'OCO_GITPUSH', // todo: deprecate
-  OCO_HOOK_AUTO_UNCOMMENT = 'OCO_HOOK_AUTO_UNCOMMENT'
+  OCO_HOOK_AUTO_UNCOMMENT = 'OCO_HOOK_AUTO_UNCOMMENT',
+  OCO_FORMAT = 'OCO_FORMAT',
+  OCO_MODEL_ROUTING = 'OCO_MODEL_ROUTING',
+  OCO_MODEL_SMALL = 'OCO_MODEL_SMALL',
+  OCO_MODEL_LARGE = 'OCO_MODEL_LARGE',
+  OCO_FILE_CONTEXT = 'OCO_FILE_CONTEXT'
 }
 
 export enum CONFIG_MODES {
@@ -828,6 +833,52 @@ export const configValidators = {
       typeof value === 'boolean',
       'Must be true or false'
     );
+    return value;
+  },
+
+  [CONFIG_KEYS.OCO_FORMAT](value: any) {
+    validateConfig(
+      CONFIG_KEYS.OCO_FORMAT,
+      typeof value === 'string' && value.length > 0,
+      "Must be 'conventional', 'gitmoji', or a custom format string"
+    );
+    return value;
+  },
+
+  [CONFIG_KEYS.OCO_MODEL_ROUTING](value: any) {
+    validateConfig(
+      CONFIG_KEYS.OCO_MODEL_ROUTING,
+      typeof value === 'boolean',
+      'Must be true or false'
+    );
+    return value;
+  },
+
+  [CONFIG_KEYS.OCO_MODEL_SMALL](value: any) {
+    validateConfig(
+      CONFIG_KEYS.OCO_MODEL_SMALL,
+      typeof value === 'string',
+      'Must be a model name string'
+    );
+    return value;
+  },
+
+  [CONFIG_KEYS.OCO_MODEL_LARGE](value: any) {
+    validateConfig(
+      CONFIG_KEYS.OCO_MODEL_LARGE,
+      typeof value === 'string',
+      'Must be a model name string'
+    );
+    return value;
+  },
+
+  [CONFIG_KEYS.OCO_FILE_CONTEXT](value: any) {
+    validateConfig(
+      CONFIG_KEYS.OCO_FILE_CONTEXT,
+      typeof value === 'boolean',
+      'Must be true or false'
+    );
+    return value;
   }
 };
 
@@ -893,6 +944,11 @@ export type ConfigType = {
   [CONFIG_KEYS.OCO_OMIT_SCOPE]: boolean;
   [CONFIG_KEYS.OCO_TEST_MOCK_TYPE]: string;
   [CONFIG_KEYS.OCO_HOOK_AUTO_UNCOMMENT]: boolean;
+  [CONFIG_KEYS.OCO_FORMAT]: string;
+  [CONFIG_KEYS.OCO_MODEL_ROUTING]: boolean;
+  [CONFIG_KEYS.OCO_MODEL_SMALL]?: string;
+  [CONFIG_KEYS.OCO_MODEL_LARGE]?: string;
+  [CONFIG_KEYS.OCO_FILE_CONTEXT]: boolean;
 };
 
 export const defaultConfigPath = pathJoin(homedir(), '.opencommit');
@@ -941,7 +997,10 @@ export const DEFAULT_CONFIG = {
   OCO_WHY: false,
   OCO_OMIT_SCOPE: false,
   OCO_GITPUSH: true, // todo: deprecate
-  OCO_HOOK_AUTO_UNCOMMENT: false
+  OCO_HOOK_AUTO_UNCOMMENT: false,
+  OCO_FORMAT: 'conventional',
+  OCO_MODEL_ROUTING: true,
+  OCO_FILE_CONTEXT: true
 };
 
 const initGlobalConfig = (configPath: string = defaultConfigPath) => {
@@ -982,7 +1041,13 @@ const getEnvConfig = (envPath: string) => {
     OCO_TEST_MOCK_TYPE: process.env.OCO_TEST_MOCK_TYPE,
     OCO_OMIT_SCOPE: parseConfigVarValue(process.env.OCO_OMIT_SCOPE),
 
-    OCO_GITPUSH: parseConfigVarValue(process.env.OCO_GITPUSH) // todo: deprecate
+    OCO_GITPUSH: parseConfigVarValue(process.env.OCO_GITPUSH), // todo: deprecate
+
+    OCO_FORMAT: process.env.OCO_FORMAT,
+    OCO_MODEL_ROUTING: parseConfigVarValue(process.env.OCO_MODEL_ROUTING),
+    OCO_MODEL_SMALL: process.env.OCO_MODEL_SMALL,
+    OCO_MODEL_LARGE: process.env.OCO_MODEL_LARGE,
+    OCO_FILE_CONTEXT: parseConfigVarValue(process.env.OCO_FILE_CONTEXT)
   };
 };
 
@@ -1196,6 +1261,36 @@ function getConfigKeyDetails(key) {
     case CONFIG_KEYS.OCO_HOOK_AUTO_UNCOMMENT:
       return {
         description: 'Automatically uncomment the commit message in the hook',
+        values: ['true', 'false']
+      };
+    case CONFIG_KEYS.OCO_FORMAT:
+      return {
+        description:
+          "Commit message format: 'conventional' (default), 'gitmoji', or a custom template string",
+        values: ['conventional', 'gitmoji', 'custom template string']
+      };
+    case CONFIG_KEYS.OCO_MODEL_ROUTING:
+      return {
+        description:
+          'Automatically pick small/cheap models for simple commits and larger models for complex ones',
+        values: ['true', 'false']
+      };
+    case CONFIG_KEYS.OCO_MODEL_SMALL:
+      return {
+        description:
+          'Model to use for simple commits when model routing is enabled',
+        values: ['Any valid model name for your provider']
+      };
+    case CONFIG_KEYS.OCO_MODEL_LARGE:
+      return {
+        description:
+          'Model to use for complex commits when model routing is enabled',
+        values: ['Any valid model name for your provider']
+      };
+    case CONFIG_KEYS.OCO_FILE_CONTEXT:
+      return {
+        description:
+          'Read surrounding file content for complex diffs to improve commit accuracy',
         values: ['true', 'false']
       };
     default:

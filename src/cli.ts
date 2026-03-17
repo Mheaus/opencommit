@@ -42,6 +42,12 @@ cli(
         alias: 'y',
         description: 'Skip commit confirmation prompt',
         default: false
+      },
+      format: {
+        type: String,
+        alias: 'f',
+        description: "Commit format: 'conventional', 'gitmoji', or custom template",
+        default: ''
       }
     },
     ignoreArgv: (type) => type === 'unknown-flag' || type === 'argument',

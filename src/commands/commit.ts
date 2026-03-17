@@ -10,7 +10,10 @@ import {
 } from '@clack/prompts';
 import chalk from 'chalk';
 import { execa } from 'execa';
-import { generateCommitMessageByDiff } from '../generateCommitMessageFromGitDiff';
+import {
+  generateCommitMessageByDiff,
+  GenerateOptions
+} from '../generateCommitMessageFromGitDiff';
 import {
   formatUserFriendlyError,
   printFormattedError
@@ -24,6 +27,7 @@ import {
 } from '../utils/git';
 import { trytm } from '../utils/trytm';
 import { getConfig } from './config';
+import { formatRoutingInfo } from '../utils/modelRouter';
 
 const config = getConfig();
 
@@ -32,7 +36,6 @@ const getGitRemotes = async () => {
   return stdout.split('\n').filter((remote) => Boolean(remote.trim()));
 };
 
-// Check for the presence of message templates
 const checkMessageTemplate = (extraArgs: string[]): string | false => {
   for (const key in extraArgs) {
     if (extraArgs[key].includes(config.OCO_MESSAGE_TEMPLATE_PLACEHOLDER))
@@ -57,15 +60,17 @@ const generateCommitMessageFromGitDiff = async ({
   skipCommitConfirmation = false
 }: GenerateCommitMessageFromGitDiffParams): Promise<void> => {
   await assertGitRepo();
-  const commitGenerationSpinner = spinner();
-  commitGenerationSpinner.start('Generating the commit message');
+  const s = spinner();
+  s.start('Generating commit message');
 
   try {
-    let commitMessage = await generateCommitMessageByDiff(
+    const result = await generateCommitMessageByDiff({
       diff,
       fullGitMojiSpec,
       context
-    );
+    });
+
+    let commitMessage = result.message;
 
     const messageTemplate = checkMessageTemplate(extraArgs);
     if (
@@ -74,146 +79,115 @@ const generateCommitMessageFromGitDiff = async ({
     ) {
       const messageTemplateIndex = extraArgs.indexOf(messageTemplate);
       extraArgs.splice(messageTemplateIndex, 1);
-
       commitMessage = messageTemplate.replace(
         config.OCO_MESSAGE_TEMPLATE_PLACEHOLDER,
         commitMessage
       );
     }
 
-    commitGenerationSpinner.stop('📝 Commit message generated');
+    // Show routing info when model routing is active
+    const routingLabel =
+      config.OCO_MODEL_ROUTING
+        ? ` ${chalk.dim(`(${formatRoutingInfo(result.complexity, result.model)})`)}`
+        : '';
+
+    s.stop(`Commit message generated${routingLabel}`);
 
     outro(
-      `Generated commit message:
-${chalk.grey('——————————————————')}
-${commitMessage}
-${chalk.grey('——————————————————')}`
+      `${chalk.grey('─'.repeat(50))}\n${commitMessage}\n${chalk.grey('─'.repeat(50))}`
     );
 
     const userAction = skipCommitConfirmation
       ? 'Yes'
       : await select({
-          message: 'Confirm the commit message?',
+          message: 'Commit?',
           options: [
             { value: 'Yes', label: 'Yes' },
-            { value: 'No', label: 'No' },
-            { value: 'Edit', label: 'Edit' }
+            { value: 'Edit', label: 'Edit' },
+            { value: 'Regenerate', label: 'Regenerate' },
+            { value: 'No', label: 'Cancel' }
           ]
         });
 
-    if (isCancel(userAction)) process.exit(1);
+    if (isCancel(userAction) || userAction === 'No') {
+      outro('Cancelled');
+      process.exit(0);
+    }
 
     if (userAction === 'Edit') {
       const textResponse = await text({
-        message: 'Please edit the commit message: (press Enter to continue)',
+        message: 'Edit commit message:',
         initialValue: commitMessage
       });
 
+      if (isCancel(textResponse)) process.exit(1);
       commitMessage = textResponse.toString();
     }
 
-    if (userAction === 'Yes' || userAction === 'Edit') {
-      const committingChangesSpinner = spinner();
-      committingChangesSpinner.start('Committing the changes');
-      const { stdout } = await execa('git', [
-        'commit',
-        '-m',
-        commitMessage,
-        ...extraArgs
-      ]);
-      committingChangesSpinner.stop(
-        `${chalk.green('✔')} Successfully committed`
-      );
+    if (userAction === 'Regenerate') {
+      await generateCommitMessageFromGitDiff({
+        diff,
+        extraArgs,
+        context,
+        fullGitMojiSpec
+      });
+      return;
+    }
 
-      outro(stdout);
+    // Commit
+    const { stdout } = await execa('git', [
+      'commit',
+      '-m',
+      commitMessage,
+      ...extraArgs
+    ]);
 
-      const remotes = await getGitRemotes();
+    outro(`${chalk.green('✔')} ${stdout.split('\n')[0]}`);
 
-      // user isn't pushing, return early
-      if (config.OCO_GITPUSH === false) return;
+    // Push flow
+    if (config.OCO_GITPUSH === false) return;
 
-      if (!remotes.length) {
-        const { stdout } = await execa('git', ['push']);
-        if (stdout) outro(stdout);
-        process.exit(0);
-      }
+    const remotes = await getGitRemotes();
+    if (!remotes.length) return;
 
-      if (remotes.length === 1) {
-        const isPushConfirmedByUser = await confirm({
-          message: 'Do you want to run `git push`?'
-        });
-
-        if (isCancel(isPushConfirmedByUser)) process.exit(1);
-
-        if (isPushConfirmedByUser) {
-          const pushSpinner = spinner();
-
-          pushSpinner.start(`Running 'git push ${remotes[0]}'`);
-
-          const { stdout } = await execa('git', [
-            'push',
-            '--verbose',
-            remotes[0]
-          ]);
-
-          pushSpinner.stop(
-            `${chalk.green('✔')} Successfully pushed all commits to ${
-              remotes[0]
-            }`
-          );
-
-          if (stdout) outro(stdout);
-        } else {
-          outro('`git push` aborted');
-          process.exit(0);
-        }
-      } else {
-        const skipOption = `don't push`;
-        const selectedRemote = (await select({
-          message: 'Choose a remote to push to',
-          options: [...remotes, skipOption].map((remote) => ({
-            value: remote,
-            label: remote
-          }))
-        })) as string;
-
-        if (isCancel(selectedRemote)) process.exit(1);
-
-        if (selectedRemote !== skipOption) {
-          const pushSpinner = spinner();
-
-          pushSpinner.start(`Running 'git push ${selectedRemote}'`);
-
-          const { stdout } = await execa('git', ['push', selectedRemote]);
-
-          if (stdout) outro(stdout);
-
-          pushSpinner.stop(
-            `${chalk.green(
-              '✔'
-            )} successfully pushed all commits to ${selectedRemote}`
-          );
-        }
-      }
-    } else {
-      const regenerateMessage = await confirm({
-        message: 'Do you want to regenerate the message?'
+    if (remotes.length === 1) {
+      const shouldPush = await confirm({
+        message: `Push to ${remotes[0]}?`
       });
 
-      if (isCancel(regenerateMessage)) process.exit(1);
+      if (isCancel(shouldPush) || !shouldPush) return;
 
-      if (regenerateMessage) {
-        await generateCommitMessageFromGitDiff({
-          diff,
-          extraArgs,
-          fullGitMojiSpec
-        });
-      }
+      const pushSpinner = spinner();
+      pushSpinner.start(`Pushing to ${remotes[0]}`);
+      const { stdout: pushOut } = await execa('git', [
+        'push',
+        '--verbose',
+        remotes[0]
+      ]);
+      pushSpinner.stop(`${chalk.green('✔')} Pushed to ${remotes[0]}`);
+      if (pushOut) outro(pushOut);
+    } else {
+      const selectedRemote = (await select({
+        message: 'Push to:',
+        options: [
+          ...remotes.map((r) => ({ value: r, label: r })),
+          { value: '__skip__', label: 'Skip' }
+        ]
+      })) as string;
+
+      if (isCancel(selectedRemote) || selectedRemote === '__skip__') return;
+
+      const pushSpinner = spinner();
+      pushSpinner.start(`Pushing to ${selectedRemote}`);
+      const { stdout: pushOut } = await execa('git', [
+        'push',
+        selectedRemote
+      ]);
+      pushSpinner.stop(`${chalk.green('✔')} Pushed to ${selectedRemote}`);
+      if (pushOut) outro(pushOut);
     }
   } catch (error) {
-    commitGenerationSpinner.stop(
-      `${chalk.red('✖')} Failed to generate the commit message`
-    );
+    s.stop(`${chalk.red('✖')} Generation failed`);
 
     const errorConfig = getConfig();
     const provider = errorConfig.OCO_AI_PROVIDER || 'openai';
@@ -236,7 +210,7 @@ export async function commit(
 
     if (changedFiles) await gitAdd({ files: changedFiles });
     else {
-      outro('No changes detected, write some code and run `oco` again');
+      outro('No changes detected');
       process.exit(1);
     }
   }
@@ -249,21 +223,16 @@ export async function commit(
     process.exit(1);
   }
 
-  intro('open-commit');
+  intro(chalk.bold('opencommit'));
+
   if (errorChangedFiles ?? errorStagedFiles) {
     outro(`${chalk.red('✖')} ${errorChangedFiles ?? errorStagedFiles}`);
     process.exit(1);
   }
 
-  const stagedFilesSpinner = spinner();
-
-  stagedFilesSpinner.start('Counting staged files');
-
   if (stagedFiles.length === 0) {
-    stagedFilesSpinner.stop('No files are staged');
-
     const isStageAllAndCommitConfirmedByUser = await confirm({
-      message: 'Do you want to stage all files and generate commit message?'
+      message: 'No staged files. Stage all and commit?'
     });
 
     if (isCancel(isStageAllAndCommitConfirmedByUser)) process.exit(1);
@@ -273,9 +242,9 @@ export async function commit(
       process.exit(0);
     }
 
-    if (stagedFiles.length === 0 && changedFiles.length > 0) {
+    if (changedFiles.length > 0) {
       const files = (await multiselect({
-        message: chalk.cyan('Select the files you want to add to the commit:'),
+        message: 'Select files to stage:',
         options: changedFiles.map((file) => ({
           value: file,
           label: file
@@ -291,10 +260,10 @@ export async function commit(
     process.exit(0);
   }
 
-  stagedFilesSpinner.stop(
-    `${stagedFiles.length} staged files:\n${stagedFiles
-      .map((file) => `  ${file}`)
-      .join('\n')}`
+  outro(
+    chalk.dim(
+      `${stagedFiles.length} file${stagedFiles.length === 1 ? '' : 's'} staged`
+    )
   );
 
   const [, generateCommitError] = await trytm(

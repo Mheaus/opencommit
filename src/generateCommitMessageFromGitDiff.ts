@@ -18,30 +18,15 @@ import {
 } from './utils/errors';
 import { mergeDiffs } from './utils/mergeDiffs';
 import { tokenCount } from './utils/tokenCount';
+import { analyzeDiffComplexity, DiffComplexity } from './utils/complexity';
+import { routeModel, formatRoutingInfo, ModelRouterConfig } from './utils/modelRouter';
+import {
+  shouldReadFileContent,
+  readFileContexts,
+  FileContext
+} from './utils/fileContent';
 
-const config = getConfig();
-const MAX_TOKENS_INPUT = config.OCO_TOKENS_MAX_INPUT;
-const MAX_TOKENS_OUTPUT = config.OCO_TOKENS_MAX_OUTPUT;
-
-const generateCommitMessageChatCompletionPrompt = async (
-  diff: string,
-  fullGitMojiSpec: boolean,
-  context: string
-): Promise<Array<OpenAI.Chat.Completions.ChatCompletionMessageParam>> => {
-  const INIT_MESSAGES_PROMPT = await getMainCommitPrompt(
-    fullGitMojiSpec,
-    context
-  );
-
-  const chatContextAsCompletionRequest = [...INIT_MESSAGES_PROMPT];
-
-  chatContextAsCompletionRequest.push({
-    role: 'user',
-    content: diff
-  });
-
-  return chatContextAsCompletionRequest;
-};
+const ADJUSTMENT_FACTOR = 20;
 
 export enum GenerateCommitMessageErrorEnum {
   tooMuchTokens = 'TOO_MUCH_TOKENS',
@@ -55,9 +40,7 @@ async function handleModelNotFoundError(
   provider: string,
   currentModel: string
 ): Promise<string | null> {
-  console.log(
-    chalk.red(`\n✖ Model '${currentModel}' not found\n`)
-  );
+  console.log(chalk.red(`\n✖ Model '${currentModel}' not found\n`));
 
   const suggestedModels = getSuggestedModels(provider, currentModel);
   const recommended =
@@ -74,7 +57,6 @@ async function handleModelNotFoundError(
 
   const options: Array<{ value: string; label: string }> = [];
 
-  // Add recommended first if available
   if (recommended && suggestedModels.includes(recommended)) {
     options.push({
       value: recommended,
@@ -82,7 +64,6 @@ async function handleModelNotFoundError(
     });
   }
 
-  // Add other suggestions
   suggestedModels
     .filter((m) => m !== recommended)
     .forEach((model) => {
@@ -96,9 +77,7 @@ async function handleModelNotFoundError(
     options
   });
 
-  if (isCancel(selection)) {
-    return null;
-  }
+  if (isCancel(selection)) return null;
 
   let newModel: string;
   if (selection === '__custom__') {
@@ -113,15 +92,12 @@ async function handleModelNotFoundError(
       }
     });
 
-    if (isCancel(customModel)) {
-      return null;
-    }
+    if (isCancel(customModel)) return null;
     newModel = customModel as string;
   } else {
     newModel = selection as string;
   }
 
-  // Ask if user wants to save as default
   const saveAsDefault = await confirm({
     message: 'Save as default model?'
   });
@@ -138,22 +114,72 @@ async function handleModelNotFoundError(
   return newModel;
 }
 
-const ADJUSTMENT_FACTOR = 20;
-
-export const generateCommitMessageByDiff = async (
+const generateCommitMessageChatCompletionPrompt = async (
   diff: string,
-  fullGitMojiSpec: boolean = false,
-  context: string = '',
-  retryWithModel?: string
-): Promise<string> => {
+  fullGitMojiSpec: boolean,
+  context: string,
+  fileContexts?: FileContext[]
+): Promise<Array<OpenAI.Chat.Completions.ChatCompletionMessageParam>> => {
+  const INIT_MESSAGES_PROMPT = await getMainCommitPrompt(
+    fullGitMojiSpec,
+    context,
+    fileContexts
+  );
+
+  return [...INIT_MESSAGES_PROMPT, { role: 'user', content: diff }];
+};
+
+export interface GenerateOptions {
+  diff: string;
+  fullGitMojiSpec?: boolean;
+  context?: string;
+  retryWithModel?: string;
+}
+
+export const generateCommitMessageByDiff = async ({
+  diff,
+  fullGitMojiSpec = false,
+  context = '',
+  retryWithModel
+}: GenerateOptions): Promise<{
+  message: string;
+  model: string;
+  complexity: DiffComplexity;
+}> => {
   const currentConfig = getConfig();
   const provider = currentConfig.OCO_AI_PROVIDER || 'openai';
-  const currentModel = retryWithModel || currentConfig.OCO_MODEL;
+  const MAX_TOKENS_INPUT = currentConfig.OCO_TOKENS_MAX_INPUT;
+  const MAX_TOKENS_OUTPUT = currentConfig.OCO_TOKENS_MAX_OUTPUT;
+
+  // 1. Analyze diff complexity
+  const analysis = analyzeDiffComplexity(diff);
+
+  // 2. Route to appropriate model
+  const routerConfig: ModelRouterConfig = {
+    provider,
+    defaultModel: retryWithModel || currentConfig.OCO_MODEL,
+    smallModel: currentConfig.OCO_MODEL_SMALL,
+    largeModel: currentConfig.OCO_MODEL_LARGE,
+    enabled: currentConfig.OCO_MODEL_ROUTING ?? true
+  };
+
+  const selectedModel = retryWithModel || routeModel(analysis.level, routerConfig);
+
+  // 3. Optionally read file content for complex diffs
+  let fileContexts: FileContext[] = [];
+  if (shouldReadFileContent(analysis.level, currentConfig.OCO_FILE_CONTEXT ?? true)) {
+    try {
+      fileContexts = await readFileContexts(diff, 2000);
+    } catch {
+      // Non-critical, proceed without file context
+    }
+  }
 
   try {
     const INIT_MESSAGES_PROMPT = await getMainCommitPrompt(
       fullGitMojiSpec,
-      context
+      context,
+      fileContexts
     );
 
     const INIT_MESSAGES_PROMPT_LENGTH = INIT_MESSAGES_PROMPT.map(
@@ -170,55 +196,64 @@ export const generateCommitMessageByDiff = async (
       const commitMessagePromises = await getCommitMsgsPromisesFromFileDiffs(
         diff,
         MAX_REQUEST_TOKENS,
-        fullGitMojiSpec
+        fullGitMojiSpec,
+        selectedModel
       );
 
-      const commitMessages = [] as string[];
+      const commitMessages: string[] = [];
       for (const promise of commitMessagePromises) {
-        commitMessages.push((await promise) as string);
-        await delay(2000);
+        const msg = await promise;
+        if (msg) commitMessages.push(msg);
+        await delay(500);
       }
 
-      return commitMessages.join('\n\n');
+      return {
+        message: commitMessages.join('\n\n'),
+        model: selectedModel,
+        complexity: analysis.level
+      };
     }
 
     const messages = await generateCommitMessageChatCompletionPrompt(
       diff,
       fullGitMojiSpec,
-      context
+      context,
+      fileContexts
     );
 
-    const engine = getEngine();
+    const engine = getEngine(selectedModel);
     const commitMessage = await engine.generateCommitMessage(messages);
 
     if (!commitMessage)
       throw new Error(GenerateCommitMessageErrorEnum.emptyMessage);
 
-    return commitMessage;
+    return {
+      message: commitMessage,
+      model: selectedModel,
+      complexity: analysis.level
+    };
   } catch (error) {
-    // Handle model-not-found errors with interactive recovery
     if (isModelNotFoundError(error)) {
       const newModel = await handleModelNotFoundError(
         error as Error,
         provider,
-        currentModel
+        selectedModel
       );
 
       if (newModel) {
         console.log(chalk.cyan(`Retrying with ${newModel}...\n`));
-        // Retry with the new model by updating config temporarily
         const existingConfig = getGlobalConfig();
         setGlobalConfig({
           ...existingConfig,
           OCO_MODEL: newModel
         } as any);
 
-        return generateCommitMessageByDiff(
+        return generateCommitMessageByDiff({
           diff,
           fullGitMojiSpec,
           context,
-          newModel
-        );
+          retryWithModel: newModel
+        });
       }
     }
 
@@ -230,22 +265,21 @@ function getMessagesPromisesByChangesInFile(
   fileDiff: string,
   separator: string,
   maxChangeLength: number,
-  fullGitMojiSpec: boolean
+  fullGitMojiSpec: boolean,
+  model?: string
 ) {
   const hunkHeaderSeparator = '@@ ';
   const [fileHeader, ...fileDiffByLines] = fileDiff.split(hunkHeaderSeparator);
 
-  // merge multiple line-diffs into 1 to save tokens
   const mergedChanges = mergeDiffs(
     fileDiffByLines.map((line) => hunkHeaderSeparator + line),
     maxChangeLength
   );
 
-  const lineDiffsWithHeader = [] as string[];
+  const lineDiffsWithHeader: string[] = [];
   for (const change of mergedChanges) {
     const totalChange = fileHeader + change;
     if (tokenCount(totalChange) > maxChangeLength) {
-      // If the totalChange is too large, split it into smaller pieces
       const splitChanges = splitDiff(totalChange, maxChangeLength);
       lineDiffsWithHeader.push(...splitChanges);
     } else {
@@ -253,24 +287,20 @@ function getMessagesPromisesByChangesInFile(
     }
   }
 
-  const engine = getEngine();
-  const commitMsgsFromFileLineDiffs = lineDiffsWithHeader.map(
-    async (lineDiff) => {
-      const messages = await generateCommitMessageChatCompletionPrompt(
-        separator + lineDiff,
-        fullGitMojiSpec
-      );
-
-      return engine.generateCommitMessage(messages);
-    }
-  );
-
-  return commitMsgsFromFileLineDiffs;
+  const engine = getEngine(model);
+  return lineDiffsWithHeader.map(async (lineDiff) => {
+    const messages = await generateCommitMessageChatCompletionPrompt(
+      separator + lineDiff,
+      fullGitMojiSpec,
+      ''
+    );
+    return engine.generateCommitMessage(messages);
+  });
 }
 
 function splitDiff(diff: string, maxChangeLength: number) {
   const lines = diff.split('\n');
-  const splitDiffs = [] as string[];
+  const splitDiffs: string[] = [];
   let currentDiff = '';
 
   if (maxChangeLength <= 0) {
@@ -278,25 +308,20 @@ function splitDiff(diff: string, maxChangeLength: number) {
   }
 
   for (let line of lines) {
-    // If a single line exceeds maxChangeLength, split it into multiple lines
     while (tokenCount(line) > maxChangeLength) {
       const subLine = line.substring(0, maxChangeLength);
       line = line.substring(maxChangeLength);
       splitDiffs.push(subLine);
     }
 
-    // Check the tokenCount of the currentDiff and the line separately
     if (tokenCount(currentDiff) + tokenCount('\n' + line) > maxChangeLength) {
-      // If adding the next line would exceed the maxChangeLength, start a new diff
       splitDiffs.push(currentDiff);
       currentDiff = line;
     } else {
-      // Otherwise, add the line to the current diff
       currentDiff += '\n' + line;
     }
   }
 
-  // Add the last diff
   if (currentDiff) {
     splitDiffs.push(currentDiff);
   }
@@ -307,35 +332,34 @@ function splitDiff(diff: string, maxChangeLength: number) {
 export const getCommitMsgsPromisesFromFileDiffs = async (
   diff: string,
   maxDiffLength: number,
-  fullGitMojiSpec: boolean
+  fullGitMojiSpec: boolean,
+  model?: string
 ) => {
   const separator = 'diff --git ';
 
   const diffByFiles = diff.split(separator).slice(1);
 
-  // merge multiple files-diffs into 1 prompt to save tokens
   const mergedFilesDiffs = mergeDiffs(diffByFiles, maxDiffLength);
 
-  const commitMessagePromises = [] as Promise<string | null | undefined>[];
+  const commitMessagePromises: Promise<string | null | undefined>[] = [];
 
   for (const fileDiff of mergedFilesDiffs) {
     if (tokenCount(fileDiff) >= maxDiffLength) {
-      // if file-diff is bigger than gpt context — split fileDiff into lineDiff
       const messagesPromises = getMessagesPromisesByChangesInFile(
         fileDiff,
         separator,
         maxDiffLength,
-        fullGitMojiSpec
+        fullGitMojiSpec,
+        model
       );
-
       commitMessagePromises.push(...messagesPromises);
     } else {
       const messages = await generateCommitMessageChatCompletionPrompt(
         separator + fileDiff,
-        fullGitMojiSpec
+        fullGitMojiSpec,
+        ''
       );
-
-      const engine = getEngine();
+      const engine = getEngine(model);
       commitMessagePromises.push(engine.generateCommitMessage(messages));
     }
   }
