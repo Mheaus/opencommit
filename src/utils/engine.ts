@@ -13,6 +13,7 @@ import { MLXEngine } from '../engine/mlx';
 import { DeepseekEngine } from '../engine/deepseek';
 import { AimlApiEngine } from '../engine/aimlapi';
 import { OpenRouterEngine } from '../engine/openrouter';
+import { ClaudeCodeEngine } from '../engine/claude-code';
 
 export function parseCustomHeaders(headers: any): Record<string, string> {
   let parsedHeaders = {};
@@ -91,6 +92,9 @@ export function getEngine(modelOverride?: string): AiEngine {
 
     case OCO_AI_PROVIDER_ENUM.OPENROUTER:
       return new OpenRouterEngine(DEFAULT_CONFIG);
+
+    case OCO_AI_PROVIDER_ENUM.CLAUDE_CODE:
+      return new ClaudeCodeEngine(DEFAULT_CONFIG);
 
     default:
       return new OpenAiEngine(DEFAULT_CONFIG);

@@ -21,6 +21,7 @@ import {
 } from '../utils/modelCache';
 
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  [OCO_AI_PROVIDER_ENUM.CLAUDE_CODE]: 'Claude Code (uses your Claude plan, no API key)',
   [OCO_AI_PROVIDER_ENUM.OPENAI]: 'OpenAI (GPT-4o, GPT-4)',
   [OCO_AI_PROVIDER_ENUM.ANTHROPIC]: 'Anthropic (Claude Sonnet, Opus)',
   [OCO_AI_PROVIDER_ENUM.OLLAMA]: 'Ollama (Free, runs locally)',
@@ -35,6 +36,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
 };
 
 const PRIMARY_PROVIDERS = [
+  OCO_AI_PROVIDER_ENUM.CLAUDE_CODE,
   OCO_AI_PROVIDER_ENUM.OPENAI,
   OCO_AI_PROVIDER_ENUM.ANTHROPIC,
   OCO_AI_PROVIDER_ENUM.OLLAMA
@@ -53,7 +55,8 @@ const OTHER_PROVIDERS = [
 
 const NO_API_KEY_PROVIDERS = [
   OCO_AI_PROVIDER_ENUM.OLLAMA,
-  OCO_AI_PROVIDER_ENUM.MLX
+  OCO_AI_PROVIDER_ENUM.MLX,
+  OCO_AI_PROVIDER_ENUM.CLAUDE_CODE
 ];
 
 async function selectProvider(): Promise<string | symbol> {
@@ -353,6 +356,17 @@ export async function runSetup(): Promise<boolean> {
       OCO_MODEL: ollamaConfig.model,
       OCO_API_URL: ollamaConfig.apiUrl,
       OCO_API_KEY: 'ollama' // Placeholder
+    };
+  } else if (provider === OCO_AI_PROVIDER_ENUM.CLAUDE_CODE) {
+    // Claude Code setup — no API key needed
+    console.log(chalk.cyan('\n  Claude Code — uses your Claude plan\n'));
+    console.log(chalk.dim('  Requires the claude CLI to be installed and authenticated.'));
+    console.log(chalk.dim('  No API key needed — uses your existing Claude Pro/Max subscription.\n'));
+
+    config = {
+      OCO_AI_PROVIDER: OCO_AI_PROVIDER_ENUM.CLAUDE_CODE,
+      OCO_MODEL: 'claude-code',
+      OCO_API_KEY: 'claude-code' // Placeholder
     };
   } else if (provider === OCO_AI_PROVIDER_ENUM.MLX) {
     // MLX setup

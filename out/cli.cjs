@@ -51134,6 +51134,7 @@ var validateConfig = (key, condition, validationMessage) => {
 };
 var configValidators = {
   ["OCO_API_KEY" /* OCO_API_KEY */](value, config6 = {}) {
+    if (config6.OCO_AI_PROVIDER === "claude-code") return value;
     if (config6.OCO_AI_PROVIDER !== "openai") return value;
     validateConfig(
       "OCO_API_KEY",
@@ -51274,9 +51275,10 @@ var configValidators = {
         "groq",
         "deepseek",
         "aimlapi",
-        "openrouter"
+        "openrouter",
+        "claude-code"
       ].includes(value) || value.startsWith("ollama"),
-      `${value} is not supported yet, use 'ollama', 'mlx', 'anthropic', 'azure', 'gemini', 'flowise', 'mistral', 'deepseek', 'aimlapi' or 'openai' (default)`
+      `${value} is not supported yet, use 'claude-code', 'ollama', 'mlx', 'anthropic', 'azure', 'gemini', 'flowise', 'mistral', 'deepseek', 'aimlapi' or 'openai' (default)`
     );
     return value;
   },
@@ -51369,6 +51371,7 @@ var OCO_AI_PROVIDER_ENUM = /* @__PURE__ */ ((OCO_AI_PROVIDER_ENUM2) => {
   OCO_AI_PROVIDER_ENUM2["DEEPSEEK"] = "deepseek";
   OCO_AI_PROVIDER_ENUM2["AIMLAPI"] = "aimlapi";
   OCO_AI_PROVIDER_ENUM2["OPENROUTER"] = "openrouter";
+  OCO_AI_PROVIDER_ENUM2["CLAUDE_CODE"] = "claude-code";
   return OCO_AI_PROVIDER_ENUM2;
 })(OCO_AI_PROVIDER_ENUM || {});
 var PROVIDER_API_KEY_URLS = {
@@ -51384,7 +51387,8 @@ var PROVIDER_API_KEY_URLS = {
   ["ollama" /* OLLAMA */]: null,
   ["mlx" /* MLX */]: null,
   ["flowise" /* FLOWISE */]: null,
-  ["test" /* TEST */]: null
+  ["test" /* TEST */]: null,
+  ["claude-code" /* CLAUDE_CODE */]: null
 };
 var RECOMMENDED_MODELS = {
   ["openai" /* OPENAI */]: "gpt-4o-mini",
@@ -57310,7 +57314,8 @@ var PROVIDER_BILLING_URLS = {
   ["ollama" /* OLLAMA */]: null,
   ["mlx" /* MLX */]: null,
   ["flowise" /* FLOWISE */]: null,
-  ["test" /* TEST */]: null
+  ["test" /* TEST */]: null,
+  ["claude-code" /* CLAUDE_CODE */]: null
 };
 var InsufficientCreditsError = class extends Error {
   constructor(provider, message) {
@@ -67444,6 +67449,63 @@ var OpenRouterEngine = class {
   }
 };
 
+// src/engine/claude-code.ts
+var ClaudeCodeEngine = class {
+  constructor(config6) {
+    this.generateCommitMessage = async (messages) => {
+      const systemMsg = messages.find((m5) => m5.role === "system");
+      const userMsgs = messages.filter((m5) => m5.role === "user");
+      const diffMsg = userMsgs[userMsgs.length - 1];
+      const system = systemMsg ? typeof systemMsg.content === "string" ? systemMsg.content : "" : "";
+      const diff = diffMsg ? typeof diffMsg.content === "string" ? diffMsg.content : "" : "";
+      const prompt = [
+        system,
+        "",
+        "Here is the git diff:",
+        "",
+        diff,
+        "",
+        "Respond with ONLY the commit message. No explanation, no markdown, no quotes."
+      ].join("\n");
+      try {
+        const { stdout } = await execa(
+          "claude",
+          [
+            "-p",
+            "--output-format",
+            "text",
+            "--model",
+            "sonnet",
+            "--no-session-persistence"
+          ],
+          {
+            input: prompt,
+            timeout: 12e4,
+            env: { ...process.env, TERM: "dumb" }
+          }
+        );
+        const result = stdout.trim();
+        if (!result) return null;
+        return result;
+      } catch (error) {
+        if (error.code === "ENOENT") {
+          throw new Error(
+            "Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code"
+          );
+        }
+        if (error.timedOut) {
+          throw new Error("Claude CLI timed out after 120 seconds");
+        }
+        throw new Error(
+          `Claude CLI error: ${error.stderr || error.message}`
+        );
+      }
+    };
+    this.config = config6;
+    this.client = null;
+  }
+};
+
 // src/utils/engine.ts
 function parseCustomHeaders(headers) {
   let parsedHeaders = {};
@@ -67500,6 +67562,8 @@ function getEngine(modelOverride) {
       return new AimlApiEngine(DEFAULT_CONFIG2);
     case "openrouter" /* OPENROUTER */:
       return new OpenRouterEngine(DEFAULT_CONFIG2);
+    case "claude-code" /* CLAUDE_CODE */:
+      return new ClaudeCodeEngine(DEFAULT_CONFIG2);
     default:
       return new OpenAiEngine(DEFAULT_CONFIG2);
   }
@@ -69252,6 +69316,7 @@ function getCachedModels(provider) {
 
 // src/commands/setup.ts
 var PROVIDER_DISPLAY_NAMES = {
+  ["claude-code" /* CLAUDE_CODE */]: "Claude Code (uses your Claude plan, no API key)",
   ["openai" /* OPENAI */]: "OpenAI (GPT-4o, GPT-4)",
   ["anthropic" /* ANTHROPIC */]: "Anthropic (Claude Sonnet, Opus)",
   ["ollama" /* OLLAMA */]: "Ollama (Free, runs locally)",
@@ -69265,6 +69330,7 @@ var PROVIDER_DISPLAY_NAMES = {
   ["mlx" /* MLX */]: "MLX (Apple Silicon, local)"
 };
 var PRIMARY_PROVIDERS = [
+  "claude-code" /* CLAUDE_CODE */,
   "openai" /* OPENAI */,
   "anthropic" /* ANTHROPIC */,
   "ollama" /* OLLAMA */
@@ -69281,7 +69347,8 @@ var OTHER_PROVIDERS = [
 ];
 var NO_API_KEY_PROVIDERS = [
   "ollama" /* OLLAMA */,
-  "mlx" /* MLX */
+  "mlx" /* MLX */,
+  "claude-code" /* CLAUDE_CODE */
 ];
 async function selectProvider() {
   const primaryOptions = PRIMARY_PROVIDERS.map((provider) => ({
@@ -69513,6 +69580,16 @@ async function runSetup() {
       OCO_MODEL: ollamaConfig.model,
       OCO_API_URL: ollamaConfig.apiUrl,
       OCO_API_KEY: "ollama"
+      // Placeholder
+    };
+  } else if (provider === "claude-code" /* CLAUDE_CODE */) {
+    console.log(source_default.cyan("\n  Claude Code \u2014 uses your Claude plan\n"));
+    console.log(source_default.dim("  Requires the claude CLI to be installed and authenticated."));
+    console.log(source_default.dim("  No API key needed \u2014 uses your existing Claude Pro/Max subscription.\n"));
+    config6 = {
+      OCO_AI_PROVIDER: "claude-code" /* CLAUDE_CODE */,
+      OCO_MODEL: "claude-code",
+      OCO_API_KEY: "claude-code"
       // Placeholder
     };
   } else if (provider === "mlx" /* MLX */) {

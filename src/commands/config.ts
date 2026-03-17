@@ -626,6 +626,7 @@ const validateConfig = (
 
 export const configValidators = {
   [CONFIG_KEYS.OCO_API_KEY](value: any, config: any = {}) {
+    if (config.OCO_AI_PROVIDER === 'claude-code') return value;
     if (config.OCO_AI_PROVIDER !== 'openai') return value;
 
     validateConfig(
@@ -789,9 +790,10 @@ export const configValidators = {
         'groq',
         'deepseek',
         'aimlapi',
-        'openrouter'
+        'openrouter',
+        'claude-code'
       ].includes(value) || value.startsWith('ollama'),
-      `${value} is not supported yet, use 'ollama', 'mlx', 'anthropic', 'azure', 'gemini', 'flowise', 'mistral', 'deepseek', 'aimlapi' or 'openai' (default)`
+      `${value} is not supported yet, use 'claude-code', 'ollama', 'mlx', 'anthropic', 'azure', 'gemini', 'flowise', 'mistral', 'deepseek', 'aimlapi' or 'openai' (default)`
     );
 
     return value;
@@ -895,7 +897,8 @@ export enum OCO_AI_PROVIDER_ENUM {
   MLX = 'mlx',
   DEEPSEEK = 'deepseek',
   AIMLAPI = 'aimlapi',
-  OPENROUTER = 'openrouter'
+  OPENROUTER = 'openrouter',
+  CLAUDE_CODE = 'claude-code'
 }
 
 export const PROVIDER_API_KEY_URLS: Record<string, string | null> = {
@@ -911,7 +914,8 @@ export const PROVIDER_API_KEY_URLS: Record<string, string | null> = {
   [OCO_AI_PROVIDER_ENUM.OLLAMA]: null,
   [OCO_AI_PROVIDER_ENUM.MLX]: null,
   [OCO_AI_PROVIDER_ENUM.FLOWISE]: null,
-  [OCO_AI_PROVIDER_ENUM.TEST]: null
+  [OCO_AI_PROVIDER_ENUM.TEST]: null,
+  [OCO_AI_PROVIDER_ENUM.CLAUDE_CODE]: null
 };
 
 export const RECOMMENDED_MODELS: Record<string, string> = {

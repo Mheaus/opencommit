@@ -15,7 +15,8 @@ export const PROVIDER_BILLING_URLS: Record<string, string | null> = {
   [OCO_AI_PROVIDER_ENUM.OLLAMA]: null,
   [OCO_AI_PROVIDER_ENUM.MLX]: null,
   [OCO_AI_PROVIDER_ENUM.FLOWISE]: null,
-  [OCO_AI_PROVIDER_ENUM.TEST]: null
+  [OCO_AI_PROVIDER_ENUM.TEST]: null,
+  [OCO_AI_PROVIDER_ENUM.CLAUDE_CODE]: null
 };
 
 // Error type for insufficient credits/quota
