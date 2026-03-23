@@ -28,6 +28,7 @@ import {
 import { trytm } from '../utils/trytm';
 import { getConfig } from './config';
 import { formatRoutingInfo } from '../utils/modelRouter';
+import { logSession, logSessionSeparator } from '../utils/sessionLogger';
 
 const config = getConfig();
 
@@ -60,6 +61,8 @@ const generateCommitMessageFromGitDiff = async ({
   skipCommitConfirmation = false
 }: GenerateCommitMessageFromGitDiffParams): Promise<void> => {
   await assertGitRepo();
+  logSessionSeparator();
+  logSession('START', 'generating commit message');
   const s = spinner();
   s.start('Generating commit message');
 
@@ -71,6 +74,7 @@ const generateCommitMessageFromGitDiff = async ({
     });
 
     let commitMessage = result.message;
+    logSession('GENERATED', `model=${result.model} complexity=${result.complexity}`);
 
     const messageTemplate = checkMessageTemplate(extraArgs);
     if (
@@ -114,6 +118,8 @@ const generateCommitMessageFromGitDiff = async ({
       process.exit(0);
     }
 
+    logSession('USER_ACTION', userAction as string);
+
     if (userAction === 'Edit') {
       const textResponse = await text({
         message: 'Edit commit message:',
@@ -135,6 +141,7 @@ const generateCommitMessageFromGitDiff = async ({
     }
 
     // Commit
+    logSession('COMMIT', commitMessage.split('\n')[0]);
     const { stdout } = await execa('git', [
       'commit',
       '-m',
@@ -142,6 +149,7 @@ const generateCommitMessageFromGitDiff = async ({
       ...extraArgs
     ]);
 
+    logSession('COMMITTED', stdout.split('\n')[0]);
     outro(`${chalk.green('✔')} ${stdout.split('\n')[0]}`);
 
     // Push flow
@@ -164,6 +172,7 @@ const generateCommitMessageFromGitDiff = async ({
         '--verbose',
         remotes[0]
       ]);
+      logSession('PUSHED', remotes[0]);
       pushSpinner.stop(`${chalk.green('✔')} Pushed to ${remotes[0]}`);
       if (pushOut) outro(pushOut);
     } else {
@@ -183,10 +192,12 @@ const generateCommitMessageFromGitDiff = async ({
         'push',
         selectedRemote
       ]);
+      logSession('PUSHED', selectedRemote);
       pushSpinner.stop(`${chalk.green('✔')} Pushed to ${selectedRemote}`);
       if (pushOut) outro(pushOut);
     }
   } catch (error) {
+    logSession('ERROR', error instanceof Error ? error.message : String(error));
     s.stop(`${chalk.red('✖')} Generation failed`);
 
     const errorConfig = getConfig();
@@ -259,6 +270,8 @@ export async function commit(
     await commit(extraArgs, context, false, fullGitMojiSpec);
     process.exit(0);
   }
+
+  logSession('STAGED', `${stagedFiles.length} file(s): ${stagedFiles.slice(0, 5).join(', ')}${stagedFiles.length > 5 ? '...' : ''}`);
 
   outro(
     chalk.dim(

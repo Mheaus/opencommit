@@ -50560,6 +50560,7 @@ var CONFIG_KEYS = /* @__PURE__ */ ((CONFIG_KEYS3) => {
   CONFIG_KEYS3["OCO_MODEL_SMALL"] = "OCO_MODEL_SMALL";
   CONFIG_KEYS3["OCO_MODEL_LARGE"] = "OCO_MODEL_LARGE";
   CONFIG_KEYS3["OCO_FILE_CONTEXT"] = "OCO_FILE_CONTEXT";
+  CONFIG_KEYS3["OCO_SCOPES"] = "OCO_SCOPES";
   return CONFIG_KEYS3;
 })(CONFIG_KEYS || {});
 var MODEL_LIST = {
@@ -51355,6 +51356,14 @@ var configValidators = {
       "Must be true or false"
     );
     return value;
+  },
+  ["OCO_SCOPES" /* OCO_SCOPES */](value) {
+    validateConfig(
+      "OCO_SCOPES" /* OCO_SCOPES */,
+      typeof value === "string",
+      'Must be a comma-separated list of allowed scopes (e.g. "tenants,themes,apps")'
+    );
+    return value;
   }
 };
 var OCO_AI_PROVIDER_ENUM = /* @__PURE__ */ ((OCO_AI_PROVIDER_ENUM2) => {
@@ -51465,7 +51474,8 @@ var getEnvConfig = (envPath) => {
     OCO_MODEL_ROUTING: parseConfigVarValue(process.env.OCO_MODEL_ROUTING),
     OCO_MODEL_SMALL: process.env.OCO_MODEL_SMALL,
     OCO_MODEL_LARGE: process.env.OCO_MODEL_LARGE,
-    OCO_FILE_CONTEXT: parseConfigVarValue(process.env.OCO_FILE_CONTEXT)
+    OCO_FILE_CONTEXT: parseConfigVarValue(process.env.OCO_FILE_CONTEXT),
+    OCO_SCOPES: process.env.OCO_SCOPES
   };
 };
 var setGlobalConfig = (config6, configPath = defaultConfigPath) => {
@@ -51661,6 +51671,11 @@ function getConfigKeyDetails(key) {
       return {
         description: "Read surrounding file content for complex diffs to improve commit accuracy",
         values: ["true", "false"]
+      };
+    case "OCO_SCOPES" /* OCO_SCOPES */:
+      return {
+        description: 'Comma-separated list of allowed scopes for commit messages (e.g. "tenants,themes,apps")',
+        values: ["Comma-separated string"]
       };
     default:
       return {
@@ -55602,12 +55617,12 @@ var speedometer_default = speedometer;
 
 // node_modules/axios/lib/helpers/throttle.js
 function throttle(fn, freq) {
-  let timestamp = 0;
+  let timestamp2 = 0;
   let threshold = 1e3 / freq;
   let lastArgs;
   let timer;
   const invoke = (args, now = Date.now()) => {
-    timestamp = now;
+    timestamp2 = now;
     lastArgs = null;
     if (timer) {
       clearTimeout(timer);
@@ -55617,7 +55632,7 @@ function throttle(fn, freq) {
   };
   const throttled = (...args) => {
     const now = Date.now();
-    const passed = now - timestamp;
+    const passed = now - timestamp2;
     if (passed >= threshold) {
       invoke(args, now);
     } else {
@@ -67957,6 +67972,11 @@ function buildSystemPrompt(format, fullGitMojiSpec, context, fileContexts) {
     parts.push(
       "Do NOT include a scope. Use format: <type>: <subject>"
     );
+  } else if (config4.OCO_SCOPES) {
+    const scopes = config4.OCO_SCOPES.split(",").map((s2) => s2.trim()).filter(Boolean);
+    parts.push(
+      `The scope MUST be one of: ${scopes.join(", ")}. Choose the scope that best matches the area affected by the change. Do NOT use file names or any other value as the scope.`
+    );
   }
   if (config4.OCO_DESCRIPTION) {
     parts.push(
@@ -68710,6 +68730,46 @@ var trytm = async (promise) => {
   }
 };
 
+// src/utils/sessionLogger.ts
+var import_fs4 = require("fs");
+var import_os2 = require("os");
+var import_path5 = require("path");
+var LOG_DIR = (0, import_path5.join)((0, import_os2.homedir)(), ".opencommit", "logs");
+function ensureLogDir() {
+  if (!(0, import_fs4.existsSync)(LOG_DIR)) {
+    (0, import_fs4.mkdirSync)(LOG_DIR, { recursive: true });
+  }
+}
+function getSessionLogPath() {
+  const now = /* @__PURE__ */ new Date();
+  const date = now.toISOString().slice(0, 10);
+  return (0, import_path5.join)(LOG_DIR, `${date}.log`);
+}
+function timestamp() {
+  return (/* @__PURE__ */ new Date()).toISOString().slice(11, 19);
+}
+function logSession(step, detail) {
+  try {
+    ensureLogDir();
+    const line = detail ? `[${timestamp()}] ${step}: ${detail}` : `[${timestamp()}] ${step}`;
+    (0, import_fs4.appendFileSync)(getSessionLogPath(), line + "\n", "utf8");
+  } catch {
+  }
+}
+function logSessionSeparator() {
+  try {
+    ensureLogDir();
+    (0, import_fs4.appendFileSync)(
+      getSessionLogPath(),
+      `
+${"\u2500".repeat(40)} session ${(/* @__PURE__ */ new Date()).toISOString().slice(11, 19)} ${"\u2500".repeat(5)}
+`,
+      "utf8"
+    );
+  } catch {
+  }
+}
+
 // src/commands/commit.ts
 var config5 = getConfig();
 var getGitRemotes = async () => {
@@ -68731,6 +68791,8 @@ var generateCommitMessageFromGitDiff = async ({
   skipCommitConfirmation = false
 }) => {
   await assertGitRepo();
+  logSessionSeparator();
+  logSession("START", "generating commit message");
   const s2 = le();
   s2.start("Generating commit message");
   try {
@@ -68740,6 +68802,7 @@ var generateCommitMessageFromGitDiff = async ({
       context
     });
     let commitMessage = result.message;
+    logSession("GENERATED", `model=${result.model} complexity=${result.complexity}`);
     const messageTemplate = checkMessageTemplate(extraArgs2);
     if (config5.OCO_MESSAGE_TEMPLATE_PLACEHOLDER && typeof messageTemplate === "string") {
       const messageTemplateIndex = extraArgs2.indexOf(messageTemplate);
@@ -68769,6 +68832,7 @@ ${source_default.grey("\u2500".repeat(50))}`
       ce("Cancelled");
       process.exit(0);
     }
+    logSession("USER_ACTION", userAction);
     if (userAction === "Edit") {
       const textResponse = await J4({
         message: "Edit commit message:",
@@ -68786,12 +68850,14 @@ ${source_default.grey("\u2500".repeat(50))}`
       });
       return;
     }
+    logSession("COMMIT", commitMessage.split("\n")[0]);
     const { stdout } = await execa("git", [
       "commit",
       "-m",
       commitMessage,
       ...extraArgs2
     ]);
+    logSession("COMMITTED", stdout.split("\n")[0]);
     ce(`${source_default.green("\u2714")} ${stdout.split("\n")[0]}`);
     if (config5.OCO_GITPUSH === false) return;
     const remotes = await getGitRemotes();
@@ -68808,6 +68874,7 @@ ${source_default.grey("\u2500".repeat(50))}`
         "--verbose",
         remotes[0]
       ]);
+      logSession("PUSHED", remotes[0]);
       pushSpinner.stop(`${source_default.green("\u2714")} Pushed to ${remotes[0]}`);
       if (pushOut) ce(pushOut);
     } else {
@@ -68825,10 +68892,12 @@ ${source_default.grey("\u2500".repeat(50))}`
         "push",
         selectedRemote
       ]);
+      logSession("PUSHED", selectedRemote);
       pushSpinner.stop(`${source_default.green("\u2714")} Pushed to ${selectedRemote}`);
       if (pushOut) ce(pushOut);
     }
   } catch (error) {
+    logSession("ERROR", error instanceof Error ? error.message : String(error));
     s2.stop(`${source_default.red("\u2716")} Generation failed`);
     const errorConfig = getConfig();
     const provider = errorConfig.OCO_AI_PROVIDER || "openai";
@@ -68880,6 +68949,7 @@ async function commit(extraArgs2 = [], context = "", isStageAllFlag = false, ful
     await commit(extraArgs2, context, false, fullGitMojiSpec);
     process.exit(0);
   }
+  logSession("STAGED", `${stagedFiles.length} file(s): ${stagedFiles.slice(0, 5).join(", ")}${stagedFiles.length > 5 ? "..." : ""}`);
   ce(
     source_default.dim(
       `${stagedFiles.length} file${stagedFiles.length === 1 ? "" : "s"} staged`
@@ -68933,15 +69003,15 @@ var commitlintConfigCommand = G3(
 
 // src/commands/githook.ts
 init_dist2();
-var import_fs4 = require("fs");
+var import_fs5 = require("fs");
 var import_promises3 = __toESM(require("fs/promises"), 1);
-var import_path5 = __toESM(require("path"), 1);
+var import_path6 = __toESM(require("path"), 1);
 var HOOK_NAME = "prepare-commit-msg";
-var DEFAULT_SYMLINK_URL = import_path5.default.join(".git", "hooks", HOOK_NAME);
+var DEFAULT_SYMLINK_URL = import_path6.default.join(".git", "hooks", HOOK_NAME);
 var getHooksPath = async () => {
   try {
     const hooksPath = await getCoreHooksPath();
-    return import_path5.default.join(hooksPath, HOOK_NAME);
+    return import_path6.default.join(hooksPath, HOOK_NAME);
   } catch (error) {
     return DEFAULT_SYMLINK_URL;
   }
@@ -68952,7 +69022,7 @@ var isHookCalled = async () => {
 };
 var isHookExists = async () => {
   const hooksPath = await getHooksPath();
-  return (0, import_fs4.existsSync)(hooksPath);
+  return (0, import_fs5.existsSync)(hooksPath);
 };
 var hookCommand = G3(
   {
@@ -68981,7 +69051,7 @@ var hookCommand = G3(
             `Different ${HOOK_NAME} is already set. Remove it before setting opencommit as '${HOOK_NAME}' hook.`
           );
         }
-        await import_promises3.default.mkdir(import_path5.default.dirname(SYMLINK_URL), { recursive: true });
+        await import_promises3.default.mkdir(import_path6.default.dirname(SYMLINK_URL), { recursive: true });
         await import_promises3.default.symlink(HOOK_URL, SYMLINK_URL, "file");
         await import_promises3.default.chmod(SYMLINK_URL, 493);
         return ce(`${source_default.green("\u2714")} Hook set`);
@@ -69073,17 +69143,17 @@ ${fileContent.toString()}`;
 init_dist2();
 
 // src/utils/modelCache.ts
-var import_fs5 = require("fs");
-var import_os2 = require("os");
-var import_path6 = require("path");
-var MODEL_CACHE_PATH = (0, import_path6.join)((0, import_os2.homedir)(), ".opencommit-models.json");
+var import_fs6 = require("fs");
+var import_os3 = require("os");
+var import_path7 = require("path");
+var MODEL_CACHE_PATH = (0, import_path7.join)((0, import_os3.homedir)(), ".opencommit-models.json");
 var CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
 function readCache() {
   try {
-    if (!(0, import_fs5.existsSync)(MODEL_CACHE_PATH)) {
+    if (!(0, import_fs6.existsSync)(MODEL_CACHE_PATH)) {
       return null;
     }
-    const data = (0, import_fs5.readFileSync)(MODEL_CACHE_PATH, "utf8");
+    const data = (0, import_fs6.readFileSync)(MODEL_CACHE_PATH, "utf8");
     return JSON.parse(data);
   } catch {
     return null;
@@ -69095,7 +69165,7 @@ function writeCache(models) {
       timestamp: Date.now(),
       models
     };
-    (0, import_fs5.writeFileSync)(MODEL_CACHE_PATH, JSON.stringify(cache, null, 2), "utf8");
+    (0, import_fs6.writeFileSync)(MODEL_CACHE_PATH, JSON.stringify(cache, null, 2), "utf8");
   } catch {
   }
 }
@@ -69290,8 +69360,8 @@ async function fetchModelsForProvider(provider, apiKey, baseUrl, forceRefresh = 
 }
 function clearModelCache() {
   try {
-    if ((0, import_fs5.existsSync)(MODEL_CACHE_PATH)) {
-      (0, import_fs5.writeFileSync)(MODEL_CACHE_PATH, "{}", "utf8");
+    if ((0, import_fs6.existsSync)(MODEL_CACHE_PATH)) {
+      (0, import_fs6.writeFileSync)(MODEL_CACHE_PATH, "{}", "utf8");
     }
   } catch {
   }
@@ -69394,9 +69464,9 @@ ${source_default.dim(`  Get your key at: ${url2}`)}`;
     }
   });
 }
-function formatCacheAge(timestamp) {
-  if (!timestamp) return "";
-  const ageMs = Date.now() - timestamp;
+function formatCacheAge(timestamp2) {
+  if (!timestamp2) return "";
+  const ageMs = Date.now() - timestamp2;
   const days = Math.floor(ageMs / (1e3 * 60 * 60 * 24));
   const hours = Math.floor(ageMs / (1e3 * 60 * 60));
   if (days > 0) {
@@ -69693,9 +69763,9 @@ var setupCommand = G3(
 
 // src/commands/models.ts
 init_dist2();
-function formatCacheAge2(timestamp) {
-  if (!timestamp) return "never";
-  const ageMs = Date.now() - timestamp;
+function formatCacheAge2(timestamp2) {
+  if (!timestamp2) return "never";
+  const ageMs = Date.now() - timestamp2;
   const days = Math.floor(ageMs / (1e3 * 60 * 60 * 24));
   const hours = Math.floor(ageMs / (1e3 * 60 * 60));
   const minutes = Math.floor(ageMs / (1e3 * 60));
@@ -69836,9 +69906,9 @@ Current version: ${currentVersion}. Latest version: ${latestVersion}.
 };
 
 // src/migrations/_run.ts
-var import_fs6 = __toESM(require("fs"), 1);
-var import_os3 = require("os");
-var import_path7 = require("path");
+var import_fs7 = __toESM(require("fs"), 1);
+var import_os4 = require("os");
+var import_path8 = require("path");
 
 // src/migrations/00_use_single_api_key_and_url.ts
 function use_single_api_key_and_url_default() {
@@ -69930,18 +70000,18 @@ var migrations = [
 
 // src/migrations/_run.ts
 init_dist2();
-var migrationsFile = (0, import_path7.join)((0, import_os3.homedir)(), ".opencommit_migrations");
+var migrationsFile = (0, import_path8.join)((0, import_os4.homedir)(), ".opencommit_migrations");
 var getCompletedMigrations = () => {
-  if (!import_fs6.default.existsSync(migrationsFile)) {
+  if (!import_fs7.default.existsSync(migrationsFile)) {
     return [];
   }
-  const data = import_fs6.default.readFileSync(migrationsFile, "utf-8");
+  const data = import_fs7.default.readFileSync(migrationsFile, "utf-8");
   return data ? JSON.parse(data) : [];
 };
 var saveCompletedMigration = (migrationName) => {
   const completedMigrations = getCompletedMigrations();
   completedMigrations.push(migrationName);
-  import_fs6.default.writeFileSync(
+  import_fs7.default.writeFileSync(
     migrationsFile,
     JSON.stringify(completedMigrations, null, 2)
   );

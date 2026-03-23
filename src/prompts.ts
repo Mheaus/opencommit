@@ -125,6 +125,11 @@ function buildSystemPrompt(
     parts.push(
       'Do NOT include a scope. Use format: <type>: <subject>'
     );
+  } else if (config.OCO_SCOPES) {
+    const scopes = config.OCO_SCOPES.split(',').map((s: string) => s.trim()).filter(Boolean);
+    parts.push(
+      `The scope MUST be one of: ${scopes.join(', ')}. Choose the scope that best matches the area affected by the change. Do NOT use file names or any other value as the scope.`
+    );
   }
 
   // Description

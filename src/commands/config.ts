@@ -33,7 +33,8 @@ export enum CONFIG_KEYS {
   OCO_MODEL_ROUTING = 'OCO_MODEL_ROUTING',
   OCO_MODEL_SMALL = 'OCO_MODEL_SMALL',
   OCO_MODEL_LARGE = 'OCO_MODEL_LARGE',
-  OCO_FILE_CONTEXT = 'OCO_FILE_CONTEXT'
+  OCO_FILE_CONTEXT = 'OCO_FILE_CONTEXT',
+  OCO_SCOPES = 'OCO_SCOPES'
 }
 
 export enum CONFIG_MODES {
@@ -881,6 +882,15 @@ export const configValidators = {
       'Must be true or false'
     );
     return value;
+  },
+
+  [CONFIG_KEYS.OCO_SCOPES](value: any) {
+    validateConfig(
+      CONFIG_KEYS.OCO_SCOPES,
+      typeof value === 'string',
+      'Must be a comma-separated list of allowed scopes (e.g. "tenants,themes,apps")'
+    );
+    return value;
   }
 };
 
@@ -953,6 +963,7 @@ export type ConfigType = {
   [CONFIG_KEYS.OCO_MODEL_SMALL]?: string;
   [CONFIG_KEYS.OCO_MODEL_LARGE]?: string;
   [CONFIG_KEYS.OCO_FILE_CONTEXT]: boolean;
+  [CONFIG_KEYS.OCO_SCOPES]?: string;
 };
 
 export const defaultConfigPath = pathJoin(homedir(), '.opencommit');
@@ -1051,7 +1062,8 @@ const getEnvConfig = (envPath: string) => {
     OCO_MODEL_ROUTING: parseConfigVarValue(process.env.OCO_MODEL_ROUTING),
     OCO_MODEL_SMALL: process.env.OCO_MODEL_SMALL,
     OCO_MODEL_LARGE: process.env.OCO_MODEL_LARGE,
-    OCO_FILE_CONTEXT: parseConfigVarValue(process.env.OCO_FILE_CONTEXT)
+    OCO_FILE_CONTEXT: parseConfigVarValue(process.env.OCO_FILE_CONTEXT),
+    OCO_SCOPES: process.env.OCO_SCOPES
   };
 };
 
@@ -1296,6 +1308,12 @@ function getConfigKeyDetails(key) {
         description:
           'Read surrounding file content for complex diffs to improve commit accuracy',
         values: ['true', 'false']
+      };
+    case CONFIG_KEYS.OCO_SCOPES:
+      return {
+        description:
+          'Comma-separated list of allowed scopes for commit messages (e.g. "tenants,themes,apps")',
+        values: ['Comma-separated string']
       };
     default:
       return {
