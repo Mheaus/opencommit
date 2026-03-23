@@ -28,6 +28,21 @@ import {
 
 const ADJUSTMENT_FACTOR = 20;
 
+/**
+ * Ensures we always return a single commit message.
+ * When OCO_DESCRIPTION or OCO_WHY are enabled the AI is allowed to add a body
+ * after a blank line — in that case we keep subject + body.
+ * Otherwise we take only the first non-empty line.
+ */
+function extractFirstLine(message: string): string {
+  const config = getConfig();
+  if (config.OCO_DESCRIPTION || config.OCO_WHY) {
+    return message.trim();
+  }
+  const first = message.trim().split('\n').find((l) => l.trim().length > 0);
+  return first?.trim() || message.trim();
+}
+
 export enum GenerateCommitMessageErrorEnum {
   tooMuchTokens = 'TOO_MUCH_TOKENS',
   internalError = 'INTERNAL_ERROR',
@@ -200,18 +215,20 @@ export const generateCommitMessageByDiff = async ({
         selectedModel
       );
 
-      const commitMessages: string[] = [];
+      // Take only the first successful result for a single clean commit
       for (const promise of commitMessagePromises) {
         const msg = await promise;
-        if (msg) commitMessages.push(msg);
+        if (msg) {
+          return {
+            message: extractFirstLine(msg),
+            model: selectedModel,
+            complexity: analysis.level
+          };
+        }
         await delay(500);
       }
 
-      return {
-        message: commitMessages.join('\n\n'),
-        model: selectedModel,
-        complexity: analysis.level
-      };
+      throw new Error(GenerateCommitMessageErrorEnum.emptyMessage);
     }
 
     const messages = await generateCommitMessageChatCompletionPrompt(
@@ -228,7 +245,7 @@ export const generateCommitMessageByDiff = async ({
       throw new Error(GenerateCommitMessageErrorEnum.emptyMessage);
 
     return {
-      message: commitMessage,
+      message: extractFirstLine(commitMessage),
       model: selectedModel,
       complexity: analysis.level
     };

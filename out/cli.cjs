@@ -67984,12 +67984,7 @@ function buildSystemPrompt(format, fullGitMojiSpec, context, fileContexts) {
     );
   } else {
     parts.push(
-      "Output ONLY the commit message. No description, no explanation, no markdown, no quotes."
-    );
-  }
-  if (config4.OCO_ONE_LINE_COMMIT) {
-    parts.push(
-      "Produce exactly one commit message line covering all changes. If changes span multiple areas, pick the most significant one for the scope."
+      "Output ONLY a single commit message line. No description, no explanation, no markdown, no quotes. Never output multiple commit messages \u2014 always produce exactly one line that covers all the changes."
     );
   }
   if (config4.OCO_WHY) {
@@ -68042,18 +68037,17 @@ import {
 function getExampleResponse() {
   const format = config4.OCO_FORMAT || "conventional";
   if (format === "gitmoji" || config4.OCO_EMOJI) {
-    const fix2 = config4.OCO_OMIT_SCOPE ? "\u{1F527} refactor: use PORT constant and support env variable" : "\u{1F527} refactor(server): use PORT constant and support env variable";
+    const fix = config4.OCO_OMIT_SCOPE ? "\u{1F527} refactor: use PORT constant and support env variable" : "\u{1F527} refactor(server): use PORT constant and support env variable";
     return {
       role: "assistant",
-      content: fix2
+      content: fix
     };
   }
-  const fix = config4.OCO_OMIT_SCOPE ? "refactor: use PORT constant and support env variable" : "refactor(server): use PORT constant and support env variable";
-  const feat = config4.OCO_ONE_LINE_COMMIT ? "" : config4.OCO_OMIT_SCOPE ? "\nfeat: allow server port configuration via environment variable" : "\nfeat(server): allow server port configuration via environment variable";
+  const subject = config4.OCO_OMIT_SCOPE ? "refactor: use PORT constant and support env variable" : "refactor(server): use PORT constant and support env variable";
   const description = config4.OCO_DESCRIPTION ? "\n\nRename port variable to PORT for consistency and add support for PORT environment variable to enable runtime port configuration." : "";
   return {
     role: "assistant",
-    content: `${fix}${feat}${description}`.trim()
+    content: `${subject}${description}`.trim()
   };
 }
 var getMainCommitPrompt = async (fullGitMojiSpec, context, fileContexts) => {
@@ -68368,6 +68362,14 @@ async function readFileContexts(diff, maxTotalTokens = 2e3) {
 
 // src/generateCommitMessageFromGitDiff.ts
 var ADJUSTMENT_FACTOR = 20;
+function extractFirstLine(message) {
+  const config6 = getConfig();
+  if (config6.OCO_DESCRIPTION || config6.OCO_WHY) {
+    return message.trim();
+  }
+  const first = message.trim().split("\n").find((l3) => l3.trim().length > 0);
+  return first?.trim() || message.trim();
+}
 var GenerateCommitMessageErrorEnum = ((GenerateCommitMessageErrorEnum2) => {
   GenerateCommitMessageErrorEnum2["tooMuchTokens"] = "TOO_MUCH_TOKENS";
   GenerateCommitMessageErrorEnum2["internalError"] = "INTERNAL_ERROR";
@@ -68486,17 +68488,18 @@ var generateCommitMessageByDiff = async ({
         fullGitMojiSpec,
         selectedModel
       );
-      const commitMessages = [];
       for (const promise of commitMessagePromises) {
         const msg = await promise;
-        if (msg) commitMessages.push(msg);
+        if (msg) {
+          return {
+            message: extractFirstLine(msg),
+            model: selectedModel,
+            complexity: analysis.level
+          };
+        }
         await delay3(500);
       }
-      return {
-        message: commitMessages.join("\n\n"),
-        model: selectedModel,
-        complexity: analysis.level
-      };
+      throw new Error("EMPTY_MESSAGE" /* emptyMessage */);
     }
     const messages = await generateCommitMessageChatCompletionPrompt(
       diff,
@@ -68509,7 +68512,7 @@ var generateCommitMessageByDiff = async ({
     if (!commitMessage)
       throw new Error("EMPTY_MESSAGE" /* emptyMessage */);
     return {
-      message: commitMessage,
+      message: extractFirstLine(commitMessage),
       model: selectedModel,
       complexity: analysis.level
     };

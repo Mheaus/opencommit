@@ -139,14 +139,7 @@ function buildSystemPrompt(
     );
   } else {
     parts.push(
-      'Output ONLY the commit message. No description, no explanation, no markdown, no quotes.'
-    );
-  }
-
-  // One line
-  if (config.OCO_ONE_LINE_COMMIT) {
-    parts.push(
-      'Produce exactly one commit message line covering all changes. If changes span multiple areas, pick the most significant one for the scope.'
+      'Output ONLY a single commit message line. No description, no explanation, no markdown, no quotes. Never output multiple commit messages — always produce exactly one line that covers all the changes.'
     );
   }
 
@@ -222,15 +215,9 @@ function getExampleResponse(): OpenAI.Chat.Completions.ChatCompletionMessagePara
     };
   }
 
-  const fix = config.OCO_OMIT_SCOPE
+  const subject = config.OCO_OMIT_SCOPE
     ? 'refactor: use PORT constant and support env variable'
     : 'refactor(server): use PORT constant and support env variable';
-
-  const feat = config.OCO_ONE_LINE_COMMIT
-    ? ''
-    : config.OCO_OMIT_SCOPE
-      ? '\nfeat: allow server port configuration via environment variable'
-      : '\nfeat(server): allow server port configuration via environment variable';
 
   const description = config.OCO_DESCRIPTION
     ? '\n\nRename port variable to PORT for consistency and add support for PORT environment variable to enable runtime port configuration.'
@@ -238,7 +225,7 @@ function getExampleResponse(): OpenAI.Chat.Completions.ChatCompletionMessagePara
 
   return {
     role: 'assistant',
-    content: `${fix}${feat}${description}`.trim()
+    content: `${subject}${description}`.trim()
   };
 }
 
