@@ -1,7 +1,7 @@
 import { execa } from 'execa';
-import { readFileSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import ignore, { Ignore } from 'ignore';
-import { join } from 'path';
+import { isAbsolute, join } from 'path';
 import { outro, spinner } from '@clack/prompts';
 
 export const assertGitRepo = async () => {
@@ -39,6 +39,35 @@ export const getCoreHooksPath = async (): Promise<string> => {
 
   return stdout;
 };
+
+export const hasActivePreCommitHook = async (): Promise<boolean> => {
+  const gitDir = await getGitDir();
+
+  const result = await execa('git', ['config', '--get', 'core.hooksPath'], {
+    cwd: gitDir,
+    reject: false
+  });
+
+  const customHooksPath = result.exitCode === 0 ? result.stdout.trim() : '';
+
+  const hooksDir = customHooksPath
+    ? isAbsolute(customHooksPath)
+      ? customHooksPath
+      : join(gitDir, customHooksPath)
+    : join(gitDir, '.git', 'hooks');
+
+  const hookFile = join(hooksDir, 'pre-commit');
+
+  try {
+    const stat = statSync(hookFile);
+    return stat.isFile() && (stat.mode & 0o111) !== 0;
+  } catch {
+    return false;
+  }
+};
+
+export const skipsHooks = (extraArgs: string[]): boolean =>
+  extraArgs.some((arg) => arg === '--no-verify' || arg === '-n');
 
 export const getStagedFiles = async (): Promise<string[]> => {
   const gitDir = await getGitDir();

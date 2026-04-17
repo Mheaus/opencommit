@@ -23,7 +23,9 @@ import {
   getChangedFiles,
   getDiff,
   getStagedFiles,
-  gitAdd
+  gitAdd,
+  hasActivePreCommitHook,
+  skipsHooks
 } from '../utils/git';
 import { trytm } from '../utils/trytm';
 import { getConfig } from './config';
@@ -142,15 +144,41 @@ const generateCommitMessageFromGitDiff = async ({
 
     // Commit
     logSession('COMMIT', commitMessage.split('\n')[0]);
-    const { stdout } = await execa('git', [
-      'commit',
-      '-m',
-      commitMessage,
-      ...extraArgs
-    ]);
 
-    logSession('COMMITTED', stdout.split('\n')[0]);
-    outro(`${chalk.green('✔')} ${stdout.split('\n')[0]}`);
+    const hooksWillRun =
+      !skipsHooks(extraArgs) && (await hasActivePreCommitHook());
+
+    let commitSummary: string;
+
+    if (hooksWillRun) {
+      process.stdout.write(
+        `\n${chalk.dim('─── Running pre-commit hooks ───')}\n`
+      );
+
+      await execa('git', ['commit', '-m', commitMessage, ...extraArgs], {
+        stdio: 'inherit'
+      });
+
+      process.stdout.write(`${chalk.dim('─── Hooks complete ───')}\n\n`);
+
+      const { stdout: lastCommit } = await execa('git', [
+        'log',
+        '-1',
+        '--pretty=format:[%h] %s'
+      ]);
+      commitSummary = lastCommit;
+    } else {
+      const { stdout } = await execa('git', [
+        'commit',
+        '-m',
+        commitMessage,
+        ...extraArgs
+      ]);
+      commitSummary = stdout.split('\n')[0];
+    }
+
+    logSession('COMMITTED', commitSummary);
+    outro(`${chalk.green('✔')} ${commitSummary}`);
 
     // Push flow
     if (config.OCO_GITPUSH === false) return;

@@ -68655,6 +68655,23 @@ var getCoreHooksPath = async () => {
   });
   return stdout;
 };
+var hasActivePreCommitHook = async () => {
+  const gitDir = await getGitDir();
+  const result = await execa("git", ["config", "--get", "core.hooksPath"], {
+    cwd: gitDir,
+    reject: false
+  });
+  const customHooksPath = result.exitCode === 0 ? result.stdout.trim() : "";
+  const hooksDir = customHooksPath ? (0, import_path4.isAbsolute)(customHooksPath) ? customHooksPath : (0, import_path4.join)(gitDir, customHooksPath) : (0, import_path4.join)(gitDir, ".git", "hooks");
+  const hookFile = (0, import_path4.join)(hooksDir, "pre-commit");
+  try {
+    const stat = (0, import_fs3.statSync)(hookFile);
+    return stat.isFile() && (stat.mode & 73) !== 0;
+  } catch {
+    return false;
+  }
+};
+var skipsHooks = (extraArgs2) => extraArgs2.some((arg) => arg === "--no-verify" || arg === "-n");
 var getStagedFiles = async () => {
   const gitDir = await getGitDir();
   const { stdout: files } = await execa(
@@ -68854,14 +68871,37 @@ ${source_default.grey("\u2500".repeat(50))}`
       return;
     }
     logSession("COMMIT", commitMessage.split("\n")[0]);
-    const { stdout } = await execa("git", [
-      "commit",
-      "-m",
-      commitMessage,
-      ...extraArgs2
-    ]);
-    logSession("COMMITTED", stdout.split("\n")[0]);
-    ce(`${source_default.green("\u2714")} ${stdout.split("\n")[0]}`);
+    const hooksWillRun = !skipsHooks(extraArgs2) && await hasActivePreCommitHook();
+    let commitSummary;
+    if (hooksWillRun) {
+      process.stdout.write(
+        `
+${source_default.dim("\u2500\u2500\u2500 Running pre-commit hooks \u2500\u2500\u2500")}
+`
+      );
+      await execa("git", ["commit", "-m", commitMessage, ...extraArgs2], {
+        stdio: "inherit"
+      });
+      process.stdout.write(`${source_default.dim("\u2500\u2500\u2500 Hooks complete \u2500\u2500\u2500")}
+
+`);
+      const { stdout: lastCommit } = await execa("git", [
+        "log",
+        "-1",
+        "--pretty=format:[%h] %s"
+      ]);
+      commitSummary = lastCommit;
+    } else {
+      const { stdout } = await execa("git", [
+        "commit",
+        "-m",
+        commitMessage,
+        ...extraArgs2
+      ]);
+      commitSummary = stdout.split("\n")[0];
+    }
+    logSession("COMMITTED", commitSummary);
+    ce(`${source_default.green("\u2714")} ${commitSummary}`);
     if (config5.OCO_GITPUSH === false) return;
     const remotes = await getGitRemotes();
     if (!remotes.length) return;
