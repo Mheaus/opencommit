@@ -13,17 +13,14 @@ export class OllamaEngine implements AiEngine {
   constructor(config) {
     this.config = config;
 
-    // Combine base headers with custom headers
-    const headers = {
-      'Content-Type': 'application/json',
-      ...config.customHeaders
-    };
+    const baseURL = config.baseURL || 'http://localhost:11434';
 
     this.client = axios.create({
-      url: config.baseURL
-        ? `${config.baseURL}/${config.apiKey}`
-        : 'http://localhost:11434/api/chat',
-      headers
+      baseURL,
+      headers: {
+        'Content-Type': 'application/json',
+        ...config.customHeaders
+      }
     });
   }
 
@@ -37,10 +34,7 @@ export class OllamaEngine implements AiEngine {
       stream: false
     };
     try {
-      const response = await this.client.post(
-        this.client.getUri(this.config),
-        params
-      );
+      const response = await this.client.post('/api/chat', params);
 
       const { message } = response.data;
       let content = message?.content;

@@ -69,8 +69,86 @@ export interface ModelRouterConfig {
   smallModel?: string;
   /** Override for large tier */
   largeModel?: string;
+  /** Override provider for small tier */
+  smallProvider?: string;
+  /** Override provider for large tier */
+  largeProvider?: string;
   /** Whether routing is enabled */
   enabled: boolean;
+}
+
+export interface TieredRoutingConfig {
+  enabled: boolean;
+  /** Default provider+model when no tiered config matches */
+  defaultProvider: string;
+  defaultModel: string;
+  local?: {
+    provider: string;
+    small?: string;
+    medium?: string;
+    large?: string;
+  };
+  fallback?: {
+    provider: string;
+    small?: string;
+    medium?: string;
+    large?: string;
+  };
+}
+
+/**
+ * Select provider+model from the tiered local/fallback routing config.
+ * Prefers local for the given tier; falls back to the fallback provider if
+ * the local model for that tier is not configured.
+ */
+export function routeTiered(
+  complexity: DiffComplexity,
+  config: TieredRoutingConfig
+): { provider: string; model: string } {
+  if (!config.enabled || (!config.local && !config.fallback)) {
+    return { provider: config.defaultProvider, model: config.defaultModel };
+  }
+
+  const tier = complexity === DiffComplexity.SIMPLE
+    ? 'small'
+    : complexity === DiffComplexity.COMPLEX
+    ? 'large'
+    : 'medium';
+
+  // Try local first
+  if (config.local) {
+    const model = config.local[tier];
+    if (model) return { provider: config.local.provider, model };
+    // Local tier not configured — fall through to fallback
+  }
+
+  // Fallback provider
+  if (config.fallback) {
+    const model = config.fallback[tier];
+    if (model) return { provider: config.fallback.provider, model };
+  }
+
+  return { provider: config.defaultProvider, model: config.defaultModel };
+}
+
+/**
+ * Select the appropriate provider based on diff complexity.
+ * Returns undefined if no cross-provider routing is configured.
+ */
+export function routeProvider(
+  complexity: DiffComplexity,
+  config: ModelRouterConfig
+): string | undefined {
+  if (!config.enabled) return undefined;
+
+  switch (complexity) {
+    case DiffComplexity.SIMPLE:
+      return config.smallProvider;
+    case DiffComplexity.COMPLEX:
+      return config.largeProvider;
+    default:
+      return undefined;
+  }
 }
 
 /**

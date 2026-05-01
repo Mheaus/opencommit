@@ -19,7 +19,7 @@ import {
 import { mergeDiffs } from './utils/mergeDiffs';
 import { tokenCount } from './utils/tokenCount';
 import { analyzeDiffComplexity, DiffComplexity } from './utils/complexity';
-import { routeModel, formatRoutingInfo, ModelRouterConfig } from './utils/modelRouter';
+import { routeModel, routeProvider, routeTiered, formatRoutingInfo, ModelRouterConfig, TieredRoutingConfig } from './utils/modelRouter';
 import {
   shouldReadFileContent,
   readFileContexts,
@@ -169,16 +169,47 @@ export const generateCommitMessageByDiff = async ({
   // 1. Analyze diff complexity
   const analysis = analyzeDiffComplexity(diff);
 
-  // 2. Route to appropriate model
-  const routerConfig: ModelRouterConfig = {
-    provider,
-    defaultModel: retryWithModel || currentConfig.OCO_MODEL,
-    smallModel: currentConfig.OCO_MODEL_SMALL,
-    largeModel: currentConfig.OCO_MODEL_LARGE,
-    enabled: currentConfig.OCO_MODEL_ROUTING ?? true
-  };
+  // 2. Route to appropriate model + provider
+  const routingEnabled = currentConfig.OCO_MODEL_ROUTING ?? true;
+  let selectedModel: string;
+  let selectedProvider: string | undefined;
 
-  const selectedModel = retryWithModel || routeModel(analysis.level, routerConfig);
+  if (!retryWithModel && (currentConfig.OCO_LOCAL_PROVIDER || currentConfig.OCO_FALLBACK_PROVIDER)) {
+    // Tiered local/fallback routing
+    const tieredConfig: TieredRoutingConfig = {
+      enabled: routingEnabled,
+      defaultProvider: provider,
+      defaultModel: currentConfig.OCO_MODEL,
+      local: currentConfig.OCO_LOCAL_PROVIDER ? {
+        provider: currentConfig.OCO_LOCAL_PROVIDER,
+        small: currentConfig.OCO_LOCAL_MODEL_SMALL,
+        medium: currentConfig.OCO_LOCAL_MODEL_MEDIUM,
+        large: currentConfig.OCO_LOCAL_MODEL_LARGE
+      } : undefined,
+      fallback: currentConfig.OCO_FALLBACK_PROVIDER ? {
+        provider: currentConfig.OCO_FALLBACK_PROVIDER,
+        small: currentConfig.OCO_FALLBACK_MODEL_SMALL,
+        medium: currentConfig.OCO_FALLBACK_MODEL_MEDIUM,
+        large: currentConfig.OCO_FALLBACK_MODEL_LARGE
+      } : undefined
+    };
+    const routed = routeTiered(analysis.level, tieredConfig);
+    selectedModel = routed.model;
+    selectedProvider = routed.provider !== provider ? routed.provider : undefined;
+  } else {
+    // Legacy single-provider model routing
+    const routerConfig: ModelRouterConfig = {
+      provider,
+      defaultModel: retryWithModel || currentConfig.OCO_MODEL,
+      smallModel: currentConfig.OCO_MODEL_SMALL,
+      largeModel: currentConfig.OCO_MODEL_LARGE,
+      smallProvider: currentConfig.OCO_PROVIDER_SMALL,
+      largeProvider: currentConfig.OCO_PROVIDER_LARGE,
+      enabled: routingEnabled
+    };
+    selectedModel = retryWithModel || routeModel(analysis.level, routerConfig);
+    selectedProvider = retryWithModel ? undefined : routeProvider(analysis.level, routerConfig);
+  }
 
   // 3. Optionally read file content for complex diffs
   let fileContexts: FileContext[] = [];
@@ -212,7 +243,8 @@ export const generateCommitMessageByDiff = async ({
         diff,
         MAX_REQUEST_TOKENS,
         fullGitMojiSpec,
-        selectedModel
+        selectedModel,
+        selectedProvider
       );
 
       // Take only the first successful result for a single clean commit
@@ -238,15 +270,19 @@ export const generateCommitMessageByDiff = async ({
       fileContexts
     );
 
-    const engine = getEngine(selectedModel);
+    const engine = getEngine(selectedModel, selectedProvider);
     const commitMessage = await engine.generateCommitMessage(messages);
 
     if (!commitMessage)
       throw new Error(GenerateCommitMessageErrorEnum.emptyMessage);
 
+    const displayModel = selectedProvider
+      ? `${selectedProvider}:${selectedModel}`
+      : selectedModel;
+
     return {
       message: extractFirstLine(commitMessage),
-      model: selectedModel,
+      model: displayModel,
       complexity: analysis.level
     };
   } catch (error) {
@@ -283,7 +319,8 @@ function getMessagesPromisesByChangesInFile(
   separator: string,
   maxChangeLength: number,
   fullGitMojiSpec: boolean,
-  model?: string
+  model?: string,
+  provider?: string
 ) {
   const hunkHeaderSeparator = '@@ ';
   const [fileHeader, ...fileDiffByLines] = fileDiff.split(hunkHeaderSeparator);
@@ -304,7 +341,7 @@ function getMessagesPromisesByChangesInFile(
     }
   }
 
-  const engine = getEngine(model);
+  const engine = getEngine(model, provider);
   return lineDiffsWithHeader.map(async (lineDiff) => {
     const messages = await generateCommitMessageChatCompletionPrompt(
       separator + lineDiff,
@@ -350,7 +387,8 @@ export const getCommitMsgsPromisesFromFileDiffs = async (
   diff: string,
   maxDiffLength: number,
   fullGitMojiSpec: boolean,
-  model?: string
+  model?: string,
+  provider?: string
 ) => {
   const separator = 'diff --git ';
 
@@ -367,7 +405,8 @@ export const getCommitMsgsPromisesFromFileDiffs = async (
         separator,
         maxDiffLength,
         fullGitMojiSpec,
-        model
+        model,
+        provider
       );
       commitMessagePromises.push(...messagesPromises);
     } else {
@@ -376,7 +415,7 @@ export const getCommitMsgsPromisesFromFileDiffs = async (
         fullGitMojiSpec,
         ''
       );
-      const engine = getEngine(model);
+      const engine = getEngine(model, provider);
       commitMessagePromises.push(engine.generateCommitMessage(messages));
     }
   }

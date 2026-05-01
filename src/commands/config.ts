@@ -33,6 +33,16 @@ export enum CONFIG_KEYS {
   OCO_MODEL_ROUTING = 'OCO_MODEL_ROUTING',
   OCO_MODEL_SMALL = 'OCO_MODEL_SMALL',
   OCO_MODEL_LARGE = 'OCO_MODEL_LARGE',
+  OCO_PROVIDER_SMALL = 'OCO_PROVIDER_SMALL',
+  OCO_PROVIDER_LARGE = 'OCO_PROVIDER_LARGE',
+  OCO_LOCAL_PROVIDER = 'OCO_LOCAL_PROVIDER',
+  OCO_LOCAL_MODEL_SMALL = 'OCO_LOCAL_MODEL_SMALL',
+  OCO_LOCAL_MODEL_MEDIUM = 'OCO_LOCAL_MODEL_MEDIUM',
+  OCO_LOCAL_MODEL_LARGE = 'OCO_LOCAL_MODEL_LARGE',
+  OCO_FALLBACK_PROVIDER = 'OCO_FALLBACK_PROVIDER',
+  OCO_FALLBACK_MODEL_SMALL = 'OCO_FALLBACK_MODEL_SMALL',
+  OCO_FALLBACK_MODEL_MEDIUM = 'OCO_FALLBACK_MODEL_MEDIUM',
+  OCO_FALLBACK_MODEL_LARGE = 'OCO_FALLBACK_MODEL_LARGE',
   OCO_FILE_CONTEXT = 'OCO_FILE_CONTEXT',
   OCO_SCOPES = 'OCO_SCOPES'
 }
@@ -872,6 +882,57 @@ export const configValidators = {
       typeof value === 'string',
       'Must be a model name string'
     );
+    return value;
+  },
+
+  [CONFIG_KEYS.OCO_PROVIDER_SMALL](value: any) {
+    validateConfig(
+      CONFIG_KEYS.OCO_PROVIDER_SMALL,
+      typeof value === 'string',
+      'Must be a provider name (e.g. "ollama")'
+    );
+    return value;
+  },
+
+  [CONFIG_KEYS.OCO_PROVIDER_LARGE](value: any) {
+    validateConfig(
+      CONFIG_KEYS.OCO_PROVIDER_LARGE,
+      typeof value === 'string',
+      'Must be a provider name (e.g. "anthropic")'
+    );
+    return value;
+  },
+
+  [CONFIG_KEYS.OCO_LOCAL_PROVIDER](value: any) {
+    validateConfig(CONFIG_KEYS.OCO_LOCAL_PROVIDER, typeof value === 'string', 'Must be a provider name');
+    return value;
+  },
+  [CONFIG_KEYS.OCO_LOCAL_MODEL_SMALL](value: any) {
+    validateConfig(CONFIG_KEYS.OCO_LOCAL_MODEL_SMALL, typeof value === 'string', 'Must be a model name');
+    return value;
+  },
+  [CONFIG_KEYS.OCO_LOCAL_MODEL_MEDIUM](value: any) {
+    validateConfig(CONFIG_KEYS.OCO_LOCAL_MODEL_MEDIUM, typeof value === 'string', 'Must be a model name');
+    return value;
+  },
+  [CONFIG_KEYS.OCO_LOCAL_MODEL_LARGE](value: any) {
+    validateConfig(CONFIG_KEYS.OCO_LOCAL_MODEL_LARGE, typeof value === 'string', 'Must be a model name');
+    return value;
+  },
+  [CONFIG_KEYS.OCO_FALLBACK_PROVIDER](value: any) {
+    validateConfig(CONFIG_KEYS.OCO_FALLBACK_PROVIDER, typeof value === 'string', 'Must be a provider name');
+    return value;
+  },
+  [CONFIG_KEYS.OCO_FALLBACK_MODEL_SMALL](value: any) {
+    validateConfig(CONFIG_KEYS.OCO_FALLBACK_MODEL_SMALL, typeof value === 'string', 'Must be a model name');
+    return value;
+  },
+  [CONFIG_KEYS.OCO_FALLBACK_MODEL_MEDIUM](value: any) {
+    validateConfig(CONFIG_KEYS.OCO_FALLBACK_MODEL_MEDIUM, typeof value === 'string', 'Must be a model name');
+    return value;
+  },
+  [CONFIG_KEYS.OCO_FALLBACK_MODEL_LARGE](value: any) {
+    validateConfig(CONFIG_KEYS.OCO_FALLBACK_MODEL_LARGE, typeof value === 'string', 'Must be a model name');
     return value;
   },
 

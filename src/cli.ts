@@ -15,7 +15,7 @@ import {
   promptForMissingApiKey
 } from './commands/setup';
 import { modelsCommand } from './commands/models';
-import { checkIsLatestVersion } from './utils/checkIsLatestVersion';
+import { routingCommand } from './commands/routing';
 import { runMigrations } from './migrations/_run.js';
 
 const extraArgs = process.argv.slice(2);
@@ -24,7 +24,7 @@ cli(
   {
     version: packageJSON.version,
     name: 'opencommit',
-    commands: [configCommand, hookCommand, commitlintConfigCommand, setupCommand, modelsCommand],
+    commands: [configCommand, hookCommand, commitlintConfigCommand, setupCommand, modelsCommand, routingCommand],
     flags: {
       fgm: {
         type: Boolean,
@@ -55,7 +55,6 @@ cli(
   },
   async ({ flags }) => {
     await runMigrations();
-    await checkIsLatestVersion();
 
     if (await isHookCalled()) {
       prepareCommitMessageHook();

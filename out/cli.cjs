@@ -50559,6 +50559,16 @@ var CONFIG_KEYS = /* @__PURE__ */ ((CONFIG_KEYS3) => {
   CONFIG_KEYS3["OCO_MODEL_ROUTING"] = "OCO_MODEL_ROUTING";
   CONFIG_KEYS3["OCO_MODEL_SMALL"] = "OCO_MODEL_SMALL";
   CONFIG_KEYS3["OCO_MODEL_LARGE"] = "OCO_MODEL_LARGE";
+  CONFIG_KEYS3["OCO_PROVIDER_SMALL"] = "OCO_PROVIDER_SMALL";
+  CONFIG_KEYS3["OCO_PROVIDER_LARGE"] = "OCO_PROVIDER_LARGE";
+  CONFIG_KEYS3["OCO_LOCAL_PROVIDER"] = "OCO_LOCAL_PROVIDER";
+  CONFIG_KEYS3["OCO_LOCAL_MODEL_SMALL"] = "OCO_LOCAL_MODEL_SMALL";
+  CONFIG_KEYS3["OCO_LOCAL_MODEL_MEDIUM"] = "OCO_LOCAL_MODEL_MEDIUM";
+  CONFIG_KEYS3["OCO_LOCAL_MODEL_LARGE"] = "OCO_LOCAL_MODEL_LARGE";
+  CONFIG_KEYS3["OCO_FALLBACK_PROVIDER"] = "OCO_FALLBACK_PROVIDER";
+  CONFIG_KEYS3["OCO_FALLBACK_MODEL_SMALL"] = "OCO_FALLBACK_MODEL_SMALL";
+  CONFIG_KEYS3["OCO_FALLBACK_MODEL_MEDIUM"] = "OCO_FALLBACK_MODEL_MEDIUM";
+  CONFIG_KEYS3["OCO_FALLBACK_MODEL_LARGE"] = "OCO_FALLBACK_MODEL_LARGE";
   CONFIG_KEYS3["OCO_FILE_CONTEXT"] = "OCO_FILE_CONTEXT";
   CONFIG_KEYS3["OCO_SCOPES"] = "OCO_SCOPES";
   return CONFIG_KEYS3;
@@ -51347,6 +51357,54 @@ var configValidators = {
       typeof value === "string",
       "Must be a model name string"
     );
+    return value;
+  },
+  ["OCO_PROVIDER_SMALL" /* OCO_PROVIDER_SMALL */](value) {
+    validateConfig(
+      "OCO_PROVIDER_SMALL" /* OCO_PROVIDER_SMALL */,
+      typeof value === "string",
+      'Must be a provider name (e.g. "ollama")'
+    );
+    return value;
+  },
+  ["OCO_PROVIDER_LARGE" /* OCO_PROVIDER_LARGE */](value) {
+    validateConfig(
+      "OCO_PROVIDER_LARGE" /* OCO_PROVIDER_LARGE */,
+      typeof value === "string",
+      'Must be a provider name (e.g. "anthropic")'
+    );
+    return value;
+  },
+  ["OCO_LOCAL_PROVIDER" /* OCO_LOCAL_PROVIDER */](value) {
+    validateConfig("OCO_LOCAL_PROVIDER" /* OCO_LOCAL_PROVIDER */, typeof value === "string", "Must be a provider name");
+    return value;
+  },
+  ["OCO_LOCAL_MODEL_SMALL" /* OCO_LOCAL_MODEL_SMALL */](value) {
+    validateConfig("OCO_LOCAL_MODEL_SMALL" /* OCO_LOCAL_MODEL_SMALL */, typeof value === "string", "Must be a model name");
+    return value;
+  },
+  ["OCO_LOCAL_MODEL_MEDIUM" /* OCO_LOCAL_MODEL_MEDIUM */](value) {
+    validateConfig("OCO_LOCAL_MODEL_MEDIUM" /* OCO_LOCAL_MODEL_MEDIUM */, typeof value === "string", "Must be a model name");
+    return value;
+  },
+  ["OCO_LOCAL_MODEL_LARGE" /* OCO_LOCAL_MODEL_LARGE */](value) {
+    validateConfig("OCO_LOCAL_MODEL_LARGE" /* OCO_LOCAL_MODEL_LARGE */, typeof value === "string", "Must be a model name");
+    return value;
+  },
+  ["OCO_FALLBACK_PROVIDER" /* OCO_FALLBACK_PROVIDER */](value) {
+    validateConfig("OCO_FALLBACK_PROVIDER" /* OCO_FALLBACK_PROVIDER */, typeof value === "string", "Must be a provider name");
+    return value;
+  },
+  ["OCO_FALLBACK_MODEL_SMALL" /* OCO_FALLBACK_MODEL_SMALL */](value) {
+    validateConfig("OCO_FALLBACK_MODEL_SMALL" /* OCO_FALLBACK_MODEL_SMALL */, typeof value === "string", "Must be a model name");
+    return value;
+  },
+  ["OCO_FALLBACK_MODEL_MEDIUM" /* OCO_FALLBACK_MODEL_MEDIUM */](value) {
+    validateConfig("OCO_FALLBACK_MODEL_MEDIUM" /* OCO_FALLBACK_MODEL_MEDIUM */, typeof value === "string", "Must be a model name");
+    return value;
+  },
+  ["OCO_FALLBACK_MODEL_LARGE" /* OCO_FALLBACK_MODEL_LARGE */](value) {
+    validateConfig("OCO_FALLBACK_MODEL_LARGE" /* OCO_FALLBACK_MODEL_LARGE */, typeof value === "string", "Must be a model name");
     return value;
   },
   ["OCO_FILE_CONTEXT" /* OCO_FILE_CONTEXT */](value) {
@@ -62522,13 +62580,13 @@ var GeminiEngine = class {
 var OllamaEngine = class {
   constructor(config6) {
     this.config = config6;
-    const headers = {
-      "Content-Type": "application/json",
-      ...config6.customHeaders
-    };
+    const baseURL = config6.baseURL || "http://localhost:11434";
     this.client = axios_default.create({
-      url: config6.baseURL ? `${config6.baseURL}/${config6.apiKey}` : "http://localhost:11434/api/chat",
-      headers
+      baseURL,
+      headers: {
+        "Content-Type": "application/json",
+        ...config6.customHeaders
+      }
     });
   }
   async generateCommitMessage(messages) {
@@ -62539,10 +62597,7 @@ var OllamaEngine = class {
       stream: false
     };
     try {
-      const response = await this.client.post(
-        this.client.getUri(this.config),
-        params
-      );
+      const response = await this.client.post("/api/chat", params);
       const { message } = response.data;
       let content = message?.content;
       return removeContentTags(content, "think");
@@ -67465,6 +67520,7 @@ var OpenRouterEngine = class {
 };
 
 // src/engine/claude-code.ts
+var import_readline = require("readline");
 var ClaudeCodeEngine = class {
   constructor(config6) {
     this.generateCommitMessage = async (messages) => {
@@ -67482,26 +67538,9 @@ var ClaudeCodeEngine = class {
         "",
         "Respond with ONLY the commit message. No explanation, no markdown, no quotes."
       ].join("\n");
+      const model = this.config.model || "sonnet";
       try {
-        const { stdout } = await execa(
-          "claude",
-          [
-            "-p",
-            "--output-format",
-            "text",
-            "--model",
-            "sonnet",
-            "--no-session-persistence"
-          ],
-          {
-            input: prompt,
-            timeout: 12e4,
-            env: { ...process.env, TERM: "dumb" }
-          }
-        );
-        const result = stdout.trim();
-        if (!result) return null;
-        return result;
+        return await this._streamGenerate(prompt, model);
       } catch (error) {
         if (error.code === "ENOENT") {
           throw new Error(
@@ -67511,13 +67550,87 @@ var ClaudeCodeEngine = class {
         if (error.timedOut) {
           throw new Error("Claude CLI timed out after 120 seconds");
         }
-        throw new Error(
-          `Claude CLI error: ${error.stderr || error.message}`
-        );
+        throw new Error(`Claude CLI error: ${error.stderr || error.message}`);
       }
     };
     this.config = config6;
     this.client = null;
+  }
+  async _streamGenerate(prompt, model) {
+    const proc = execa(
+      "claude",
+      [
+        "-p",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-partial-messages",
+        "--model",
+        model,
+        "--no-session-persistence",
+        "--tools",
+        "",
+        "--no-chrome",
+        "--disable-slash-commands"
+      ],
+      {
+        input: prompt,
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 12e4,
+        env: { ...process.env, TERM: "dumb" }
+      }
+    );
+    let finalResult = null;
+    let lastThinkingLen = 0;
+    let lastTextLen = 0;
+    let printedThinking = false;
+    let printedText = false;
+    const rl = (0, import_readline.createInterface)({ input: proc.stdout });
+    for await (const line of rl) {
+      if (!line.trim()) continue;
+      let event;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (event.type === "assistant" && event.message?.content) {
+        for (const block of event.message.content) {
+          if (block.type === "thinking" && typeof block.thinking === "string") {
+            const newChunk = block.thinking.slice(lastThinkingLen);
+            if (newChunk) {
+              if (!printedThinking) {
+                process.stderr.write("\n" + source_default.dim("  \u{1F4AD} "));
+                printedThinking = true;
+              }
+              process.stderr.write(source_default.dim(newChunk));
+              lastThinkingLen = block.thinking.length;
+            }
+          }
+          if (block.type === "text" && typeof block.text === "string") {
+            const newChunk = block.text.slice(lastTextLen);
+            if (newChunk) {
+              if (!printedText) {
+                if (printedThinking) process.stderr.write("\n");
+                process.stderr.write("\n" + source_default.dim("  \u2192 "));
+                printedText = true;
+              }
+              process.stderr.write(source_default.dim(newChunk));
+              lastTextLen = block.text.length;
+            }
+          }
+        }
+      }
+      if (event.type === "result" && event.subtype === "success") {
+        finalResult = event.result?.trim() || null;
+      }
+    }
+    if (printedThinking || printedText) {
+      process.stderr.write("\n");
+    }
+    await proc;
+    return finalResult;
   }
 };
 
@@ -67540,16 +67653,18 @@ function parseCustomHeaders(headers) {
   }
   return parsedHeaders;
 }
-function getEngine(modelOverride) {
+function getEngine(modelOverride, providerOverride) {
   const config6 = getConfig();
-  const provider = config6.OCO_AI_PROVIDER;
+  const provider = providerOverride || config6.OCO_AI_PROVIDER;
   const customHeaders = parseCustomHeaders(config6.OCO_API_CUSTOM_HEADERS);
+  const rawUrl = config6.OCO_API_URL;
+  const rawKey = config6.OCO_API_KEY;
   const DEFAULT_CONFIG2 = {
     model: modelOverride || config6.OCO_MODEL,
     maxTokensOutput: config6.OCO_TOKENS_MAX_OUTPUT,
     maxTokensInput: config6.OCO_TOKENS_MAX_INPUT,
-    baseURL: config6.OCO_API_URL,
-    apiKey: config6.OCO_API_KEY,
+    baseURL: rawUrl && rawUrl !== "undefined" ? rawUrl : void 0,
+    apiKey: rawKey && rawKey !== "undefined" ? rawKey : "",
     customHeaders
   };
   switch (provider) {
@@ -68255,6 +68370,32 @@ var PROVIDER_MODEL_TIERS = {
     large: "openai/gpt-4o"
   }
 };
+function routeTiered(complexity, config6) {
+  if (!config6.enabled || !config6.local && !config6.fallback) {
+    return { provider: config6.defaultProvider, model: config6.defaultModel };
+  }
+  const tier = complexity === "simple" /* SIMPLE */ ? "small" : complexity === "complex" /* COMPLEX */ ? "large" : "medium";
+  if (config6.local) {
+    const model = config6.local[tier];
+    if (model) return { provider: config6.local.provider, model };
+  }
+  if (config6.fallback) {
+    const model = config6.fallback[tier];
+    if (model) return { provider: config6.fallback.provider, model };
+  }
+  return { provider: config6.defaultProvider, model: config6.defaultModel };
+}
+function routeProvider(complexity, config6) {
+  if (!config6.enabled) return void 0;
+  switch (complexity) {
+    case "simple" /* SIMPLE */:
+      return config6.smallProvider;
+    case "complex" /* COMPLEX */:
+      return config6.largeProvider;
+    default:
+      return void 0;
+  }
+}
 function routeModel(complexity, config6) {
   if (!config6.enabled) {
     return config6.defaultModel;
@@ -68456,14 +68597,43 @@ var generateCommitMessageByDiff = async ({
   const MAX_TOKENS_INPUT = currentConfig.OCO_TOKENS_MAX_INPUT;
   const MAX_TOKENS_OUTPUT = currentConfig.OCO_TOKENS_MAX_OUTPUT;
   const analysis = analyzeDiffComplexity(diff);
-  const routerConfig = {
-    provider,
-    defaultModel: retryWithModel || currentConfig.OCO_MODEL,
-    smallModel: currentConfig.OCO_MODEL_SMALL,
-    largeModel: currentConfig.OCO_MODEL_LARGE,
-    enabled: currentConfig.OCO_MODEL_ROUTING ?? true
-  };
-  const selectedModel = retryWithModel || routeModel(analysis.level, routerConfig);
+  const routingEnabled = currentConfig.OCO_MODEL_ROUTING ?? true;
+  let selectedModel;
+  let selectedProvider;
+  if (!retryWithModel && (currentConfig.OCO_LOCAL_PROVIDER || currentConfig.OCO_FALLBACK_PROVIDER)) {
+    const tieredConfig = {
+      enabled: routingEnabled,
+      defaultProvider: provider,
+      defaultModel: currentConfig.OCO_MODEL,
+      local: currentConfig.OCO_LOCAL_PROVIDER ? {
+        provider: currentConfig.OCO_LOCAL_PROVIDER,
+        small: currentConfig.OCO_LOCAL_MODEL_SMALL,
+        medium: currentConfig.OCO_LOCAL_MODEL_MEDIUM,
+        large: currentConfig.OCO_LOCAL_MODEL_LARGE
+      } : void 0,
+      fallback: currentConfig.OCO_FALLBACK_PROVIDER ? {
+        provider: currentConfig.OCO_FALLBACK_PROVIDER,
+        small: currentConfig.OCO_FALLBACK_MODEL_SMALL,
+        medium: currentConfig.OCO_FALLBACK_MODEL_MEDIUM,
+        large: currentConfig.OCO_FALLBACK_MODEL_LARGE
+      } : void 0
+    };
+    const routed = routeTiered(analysis.level, tieredConfig);
+    selectedModel = routed.model;
+    selectedProvider = routed.provider !== provider ? routed.provider : void 0;
+  } else {
+    const routerConfig = {
+      provider,
+      defaultModel: retryWithModel || currentConfig.OCO_MODEL,
+      smallModel: currentConfig.OCO_MODEL_SMALL,
+      largeModel: currentConfig.OCO_MODEL_LARGE,
+      smallProvider: currentConfig.OCO_PROVIDER_SMALL,
+      largeProvider: currentConfig.OCO_PROVIDER_LARGE,
+      enabled: routingEnabled
+    };
+    selectedModel = retryWithModel || routeModel(analysis.level, routerConfig);
+    selectedProvider = retryWithModel ? void 0 : routeProvider(analysis.level, routerConfig);
+  }
   let fileContexts = [];
   if (shouldReadFileContent(analysis.level, currentConfig.OCO_FILE_CONTEXT ?? true)) {
     try {
@@ -68486,7 +68656,8 @@ var generateCommitMessageByDiff = async ({
         diff,
         MAX_REQUEST_TOKENS,
         fullGitMojiSpec,
-        selectedModel
+        selectedModel,
+        selectedProvider
       );
       for (const promise of commitMessagePromises) {
         const msg = await promise;
@@ -68507,13 +68678,14 @@ var generateCommitMessageByDiff = async ({
       context,
       fileContexts
     );
-    const engine = getEngine(selectedModel);
+    const engine = getEngine(selectedModel, selectedProvider);
     const commitMessage = await engine.generateCommitMessage(messages);
     if (!commitMessage)
       throw new Error("EMPTY_MESSAGE" /* emptyMessage */);
+    const displayModel = selectedProvider ? `${selectedProvider}:${selectedModel}` : selectedModel;
     return {
       message: extractFirstLine(commitMessage),
-      model: selectedModel,
+      model: displayModel,
       complexity: analysis.level
     };
   } catch (error) {
@@ -68542,7 +68714,7 @@ var generateCommitMessageByDiff = async ({
     throw error;
   }
 };
-function getMessagesPromisesByChangesInFile(fileDiff, separator, maxChangeLength, fullGitMojiSpec, model) {
+function getMessagesPromisesByChangesInFile(fileDiff, separator, maxChangeLength, fullGitMojiSpec, model, provider) {
   const hunkHeaderSeparator = "@@ ";
   const [fileHeader, ...fileDiffByLines] = fileDiff.split(hunkHeaderSeparator);
   const mergedChanges = mergeDiffs(
@@ -68559,7 +68731,7 @@ function getMessagesPromisesByChangesInFile(fileDiff, separator, maxChangeLength
       lineDiffsWithHeader.push(totalChange);
     }
   }
-  const engine = getEngine(model);
+  const engine = getEngine(model, provider);
   return lineDiffsWithHeader.map(async (lineDiff) => {
     const messages = await generateCommitMessageChatCompletionPrompt(
       separator + lineDiff,
@@ -68594,7 +68766,7 @@ function splitDiff(diff, maxChangeLength) {
   }
   return splitDiffs;
 }
-var getCommitMsgsPromisesFromFileDiffs = async (diff, maxDiffLength, fullGitMojiSpec, model) => {
+var getCommitMsgsPromisesFromFileDiffs = async (diff, maxDiffLength, fullGitMojiSpec, model, provider) => {
   const separator = "diff --git ";
   const diffByFiles = diff.split(separator).slice(1);
   const mergedFilesDiffs = mergeDiffs(diffByFiles, maxDiffLength);
@@ -68606,7 +68778,8 @@ var getCommitMsgsPromisesFromFileDiffs = async (diff, maxDiffLength, fullGitMoji
         separator,
         maxDiffLength,
         fullGitMojiSpec,
-        model
+        model,
+        provider
       );
       commitMessagePromises.push(...messagesPromises);
     } else {
@@ -68615,7 +68788,7 @@ var getCommitMsgsPromisesFromFileDiffs = async (diff, maxDiffLength, fullGitMoji
         fullGitMojiSpec,
         ""
       );
-      const engine = getEngine(model);
+      const engine = getEngine(model, provider);
       commitMessagePromises.push(engine.generateCommitMessage(messages));
     }
   }
@@ -69914,39 +70087,187 @@ var modelsCommand = G3(
   }
 );
 
-// src/utils/checkIsLatestVersion.ts
+// src/commands/routing.ts
 init_dist2();
-
-// src/version.ts
-init_dist2();
-var getOpenCommitLatestVersion = async () => {
-  try {
-    const { stdout } = await execa("npm", ["view", "opencommit", "version"]);
-    return stdout;
-  } catch (_7) {
-    ce("Error while getting the latest version of opencommit");
-    return void 0;
+var LOCAL_PROVIDERS = [
+  { value: "ollama" /* OLLAMA */, label: "Ollama (local, free)" },
+  { value: "mlx" /* MLX */, label: "MLX (Apple Silicon, local)" }
+];
+var FALLBACK_PROVIDERS = [
+  { value: "claude-code" /* CLAUDE_CODE */, label: "Claude Code (your Claude plan, no API key)" },
+  { value: "anthropic" /* ANTHROPIC */, label: "Anthropic API" },
+  { value: "openai" /* OPENAI */, label: "OpenAI" },
+  { value: "groq" /* GROQ */, label: "Groq" },
+  { value: "gemini" /* GEMINI */, label: "Google Gemini" },
+  { value: "mistral" /* MISTRAL */, label: "Mistral AI" },
+  { value: "deepseek" /* DEEPSEEK */, label: "DeepSeek" }
+];
+var CLAUDE_CODE_MODELS = ["haiku", "sonnet", "opus"];
+var ANTHROPIC_MODELS = ["claude-3-5-haiku-20241022", "claude-sonnet-4-20250514", "claude-opus-4-20250514"];
+var OPENAI_MODELS = ["gpt-4o-mini", "gpt-4o"];
+var GROQ_MODELS = ["llama3-8b-8192", "llama3-70b-8192"];
+var GEMINI_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro"];
+var MISTRAL_MODELS = ["ministral-8b-latest", "mistral-small-latest", "mistral-large-latest"];
+var DEEPSEEK_MODELS = ["deepseek-chat"];
+function modelsForProvider(provider) {
+  switch (provider) {
+    case "claude-code" /* CLAUDE_CODE */:
+      return CLAUDE_CODE_MODELS;
+    case "anthropic" /* ANTHROPIC */:
+      return ANTHROPIC_MODELS;
+    case "openai" /* OPENAI */:
+      return OPENAI_MODELS;
+    case "groq" /* GROQ */:
+      return GROQ_MODELS;
+    case "gemini" /* GEMINI */:
+      return GEMINI_MODELS;
+    case "mistral" /* MISTRAL */:
+      return MISTRAL_MODELS;
+    case "deepseek" /* DEEPSEEK */:
+      return DEEPSEEK_MODELS;
+    default:
+      return [];
   }
-};
-
-// src/utils/checkIsLatestVersion.ts
-var checkIsLatestVersion = async () => {
-  const latestVersion = await getOpenCommitLatestVersion();
-  if (latestVersion) {
-    const currentVersion = package_default.version;
-    if (currentVersion !== latestVersion) {
-      ce(
-        source_default.yellow(
-          `
-You are not using the latest stable version of OpenCommit with new features and bug fixes.
-Current version: ${currentVersion}. Latest version: ${latestVersion}.
-\u{1F680} To update run: npm i -g opencommit@latest.
-        `
-        )
-      );
+}
+async function pickModel(provider, tierLabel, ollamaModels) {
+  const isOllama = provider === "ollama" /* OLLAMA */ || provider === "mlx" /* MLX */;
+  if (isOllama) {
+    const options2 = ollamaModels.length > 0 ? [
+      ...ollamaModels.map((m5) => ({ value: m5, label: m5 })),
+      { value: "__custom__", label: "Enter custom model name..." },
+      { value: "__skip__", label: `Skip (no ${tierLabel} tier)` }
+    ] : [
+      { value: "__custom__", label: "Enter model name manually" },
+      { value: "__skip__", label: `Skip (no ${tierLabel} tier)` }
+    ];
+    const choice2 = await ee({ message: `Local ${tierLabel} model:`, options: options2 });
+    if (hD2(choice2) || choice2 === "__skip__") return null;
+    if (choice2 === "__custom__") {
+      const val = await J4({
+        message: `Enter ${tierLabel} model name:`,
+        placeholder: tierLabel === "small" ? "llama3:8b" : tierLabel === "medium" ? "llama3:70b" : "llama3:70b"
+      });
+      if (hD2(val)) return null;
+      return val;
     }
+    return choice2;
   }
-};
+  const models = modelsForProvider(provider);
+  const options = [
+    ...models.map((m5) => ({ value: m5, label: m5 })),
+    { value: "__custom__", label: "Enter custom model name..." },
+    { value: "__skip__", label: `Skip (no ${tierLabel} tier)` }
+  ];
+  const choice = await ee({ message: `Fallback ${tierLabel} model:`, options });
+  if (hD2(choice) || choice === "__skip__") return null;
+  if (choice === "__custom__") {
+    const val = await J4({ message: `Enter ${tierLabel} model name:` });
+    if (hD2(val)) return null;
+    return val;
+  }
+  return choice;
+}
+async function runRoutingSetup() {
+  ae(source_default.bgCyan(" Model Routing Setup "));
+  console.log(source_default.dim(
+    "  Map diff complexity \u2192 model tier:\n  simple diff \u2192 small model\n  moderate diff \u2192 medium model\n  complex diff \u2192 large model\n"
+  ));
+  const config6 = {};
+  const wantsLocal = await Q3({ message: "Configure a local provider? (Ollama, MLX)" });
+  if (hD2(wantsLocal)) {
+    ce("Cancelled");
+    return false;
+  }
+  let ollamaModels = [];
+  if (wantsLocal) {
+    const localProvider = await ee({
+      message: "Local provider:",
+      options: LOCAL_PROVIDERS
+    });
+    if (hD2(localProvider)) {
+      ce("Cancelled");
+      return false;
+    }
+    config6["OCO_LOCAL_PROVIDER" /* OCO_LOCAL_PROVIDER */] = localProvider;
+    if (localProvider === "ollama" /* OLLAMA */) {
+      const s2 = le();
+      s2.start("Checking local Ollama...");
+      try {
+        ollamaModels = await fetchOllamaModels("http://localhost:11434");
+        s2.stop(ollamaModels.length > 0 ? `${source_default.green("\u2714")} Found ${ollamaModels.length} model(s)` : source_default.yellow("Ollama running but no models found"));
+      } catch {
+        s2.stop(source_default.yellow("Ollama not running \u2014 enter model names manually"));
+      }
+    }
+    const small = await pickModel(localProvider, "small", ollamaModels);
+    if (small) config6["OCO_LOCAL_MODEL_SMALL" /* OCO_LOCAL_MODEL_SMALL */] = small;
+    const medium = await pickModel(localProvider, "medium", ollamaModels);
+    if (medium) config6["OCO_LOCAL_MODEL_MEDIUM" /* OCO_LOCAL_MODEL_MEDIUM */] = medium;
+    const large = await pickModel(localProvider, "large", ollamaModels);
+    if (large) config6["OCO_LOCAL_MODEL_LARGE" /* OCO_LOCAL_MODEL_LARGE */] = large;
+  }
+  const wantsFallback = await Q3({ message: "Configure a fallback provider? (used when local tier is missing or fails)" });
+  if (hD2(wantsFallback)) {
+    ce("Cancelled");
+    return false;
+  }
+  if (wantsFallback) {
+    const fallbackProvider = await ee({
+      message: "Fallback provider:",
+      options: FALLBACK_PROVIDERS
+    });
+    if (hD2(fallbackProvider)) {
+      ce("Cancelled");
+      return false;
+    }
+    config6["OCO_FALLBACK_PROVIDER" /* OCO_FALLBACK_PROVIDER */] = fallbackProvider;
+    const small = await pickModel(fallbackProvider, "small", []);
+    if (small) config6["OCO_FALLBACK_MODEL_SMALL" /* OCO_FALLBACK_MODEL_SMALL */] = small;
+    const medium = await pickModel(fallbackProvider, "medium", []);
+    if (medium) config6["OCO_FALLBACK_MODEL_MEDIUM" /* OCO_FALLBACK_MODEL_MEDIUM */] = medium;
+    const large = await pickModel(fallbackProvider, "large", []);
+    if (large) config6["OCO_FALLBACK_MODEL_LARGE" /* OCO_FALLBACK_MODEL_LARGE */] = large;
+  }
+  if (!wantsLocal && !wantsFallback) {
+    ce("Nothing configured \u2014 no changes saved.");
+    return true;
+  }
+  const existing = getGlobalConfig();
+  setGlobalConfig({ ...existing, ...config6 });
+  console.log("");
+  if (config6["OCO_LOCAL_PROVIDER" /* OCO_LOCAL_PROVIDER */]) {
+    const p4 = config6["OCO_LOCAL_PROVIDER" /* OCO_LOCAL_PROVIDER */];
+    console.log(source_default.bold("  Local:") + ` ${p4}`);
+    const s2 = config6["OCO_LOCAL_MODEL_SMALL" /* OCO_LOCAL_MODEL_SMALL */];
+    const m5 = config6["OCO_LOCAL_MODEL_MEDIUM" /* OCO_LOCAL_MODEL_MEDIUM */];
+    const l3 = config6["OCO_LOCAL_MODEL_LARGE" /* OCO_LOCAL_MODEL_LARGE */];
+    if (s2) console.log(`    simple   \u2192 ${source_default.cyan(s2)}`);
+    if (m5) console.log(`    moderate \u2192 ${source_default.cyan(m5)}`);
+    if (l3) console.log(`    complex  \u2192 ${source_default.cyan(l3)}`);
+  }
+  if (config6["OCO_FALLBACK_PROVIDER" /* OCO_FALLBACK_PROVIDER */]) {
+    const p4 = config6["OCO_FALLBACK_PROVIDER" /* OCO_FALLBACK_PROVIDER */];
+    console.log(source_default.bold("  Fallback:") + ` ${p4}`);
+    const s2 = config6["OCO_FALLBACK_MODEL_SMALL" /* OCO_FALLBACK_MODEL_SMALL */];
+    const m5 = config6["OCO_FALLBACK_MODEL_MEDIUM" /* OCO_FALLBACK_MODEL_MEDIUM */];
+    const l3 = config6["OCO_FALLBACK_MODEL_LARGE" /* OCO_FALLBACK_MODEL_LARGE */];
+    if (s2) console.log(`    simple   \u2192 ${source_default.cyan(s2)}`);
+    if (m5) console.log(`    moderate \u2192 ${source_default.cyan(m5)}`);
+    if (l3) console.log(`    complex  \u2192 ${source_default.cyan(l3)}`);
+  }
+  console.log("");
+  ce(`${source_default.green("\u2714")} Routing configuration saved`);
+  return true;
+}
+var routingCommand = G3(
+  {
+    name: "routing" /* routing */,
+    help: { description: "Configure local/fallback model routing by diff complexity" }
+  },
+  async () => {
+    await runRoutingSetup();
+  }
+);
 
 // src/migrations/_run.ts
 var import_fs7 = __toESM(require("fs"), 1);
@@ -70106,7 +70427,7 @@ Z2(
   {
     version: package_default.version,
     name: "opencommit",
-    commands: [configCommand, hookCommand, commitlintConfigCommand, setupCommand, modelsCommand],
+    commands: [configCommand, hookCommand, commitlintConfigCommand, setupCommand, modelsCommand, routingCommand],
     flags: {
       fgm: {
         type: Boolean,
@@ -70137,7 +70458,6 @@ Z2(
   },
   async ({ flags }) => {
     await runMigrations();
-    await checkIsLatestVersion();
     if (await isHookCalled()) {
       prepareCommitMessageHook();
     } else {
