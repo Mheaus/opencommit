@@ -18,6 +18,13 @@
 
 All the commits in this repo are authored by OpenCommit — look at [the commits](https://github.com/di-sukharev/opencommit/commit/eae7618d575ee8d2e9fff5de56da79d40c4bc5fc) to see how OpenCommit works. Emojis and long commit descriptions are configurable, basically everything is.
 
+## Documentation
+
+- [Quickstart](docs/quickstart.md) — install, first run, common commands
+- [Providers](docs/providers.md) — Claude Code, Ollama, OpenAI, and all others
+- [Smart routing](docs/routing.md) — route by diff complexity, local + fallback tiers
+- [Configuration reference](docs/configuration.md) — all config keys and CLI flags
+
 ## Setup OpenCommit as a CLI tool
 
 You can use OpenCommit by simply running it via the CLI like this `oco`. 2 seconds and your staged changes are committed with a meaningful message.
@@ -28,9 +35,11 @@ You can use OpenCommit by simply running it via the CLI like this `oco`. 2 secon
    npm install -g opencommit
    ```
 
-2. Get your API key from [OpenAI](https://platform.openai.com/account/api-keys) or other supported LLM providers (we support them all). Make sure that you add your OpenAI payment details to your account, so the API works.
+2. Run `oco` — the setup wizard starts on first run and guides you through provider selection.
 
-3. Set the key to OpenCommit config:
+   No API key needed if you use **Claude Code** (requires a Claude Pro/Max subscription and the `claude` CLI) or **Ollama** (local models).
+
+   For other providers, get your API key and set it:
 
    ```sh
    oco config set OCO_API_KEY=<your_api_key>
